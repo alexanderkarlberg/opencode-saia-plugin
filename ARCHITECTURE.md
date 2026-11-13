@@ -2,7 +2,9 @@
 
 ## Overview
 
-The SAIA plugin connects OpenCode to SAIA (GWDG Chat AI) models through a layered architecture.
+The SAIA plugin connects OpenCode to SAIA (GWDG Chat AI) models through a
+layered architecture. OpenCode discovers `plugins/saia-plugin.ts`, which
+re-exports the runtime plugin at `plugins/saia/saia.ts`.
 
 ```
 ┌──────────────────────────────────────────────────┐
@@ -10,22 +12,30 @@ The SAIA plugin connects OpenCode to SAIA (GWDG Chat AI) models through a layere
 │  ┌──────────────────────────────────────────────┐│
 │  │           Plugin System                       ││
 │  │  ┌──────────────────────────────────────┐    ││
-│  │  │         saia.ts                      │    ││
-│  │  │  - Plugin entry point                │    ││
-│  │  │  - Fetches model list from API       │    ││
-│  │  │  - Generates opencode.json           │    ││
-│  │  │  - Calls memory layer                │    ││
-│  │  └──────────┬───────────────────────────┘    ││
-│  │             │                                 ││
-│  │  ┌──────────▼───────────────────────────┐    ││
-│  │  │   saia-memory.ts                     │    ││
-│  │  │  - API cache (24h TTL)               │    ││
-│  │  │  - Usage tracking (JSONL)            │    ││
-│  │  │  - Metrics (success, latency)        │    ││
-│  │  │  - User preferences                  │    ││
-│  │  │  - Project context                   │    ││
-│  │  │  - New model detection               │    ││
-│  │  └──────────────────────────────────────┘    ││
+│  │  │   plugins/saia-plugin.ts (entry)     │    ││
+│  │  └───────────────┬──────────────────────┘    ││
+│  │  ┌───────────────▼──────────────────────┐    ││
+│  │  │   saia/saia.ts (dual V1+V2 plugin)   │    ││
+│  │  │  - Resolves the API key              │    ││
+│  │  │  - Fetches the model list from API   │    ││
+│  │  │  - Registers the `saia` provider     │    ││
+│  │  │    (V2: ctx.provider.transform;      │    ││
+│  │  │     V1: config hook)                 │    ││
+│  │  │  - Applies the transport choice      │    ││
+│  │  └───┬────────────────┬─────────────────┘    ││
+│  │      │                │                       ││
+│  │  ┌───▼───────────┐ ┌──▼──────────────────┐    ││
+│  │  │ saia-v2.mjs   │ │ saia-memory.ts      │    ││
+│  │  │ V2 provider   │ │ - API cache (24h)   │    ││
+│  │  │ decoration +  │ │ - Usage tracking    │    ││
+│  │  │ provider info │ │ - Metrics           │    ││
+│  │  └───────────────┘ │ - Preferences       │    ││
+│  │  ┌───────────────┐ └─────────────────────┘    ││
+│  │  │ saia-limits-  │                            ││
+│  │  │ server.js     │  captures x-ratelimit-*    ││
+│  │  │ saia-limits-  │  headers → prompt footer   ││
+│  │  │ tui.tsx       │                            ││
+│  │  └───────────────┘                            ││
 │  └──────────────────────────────────────────────┘│
 │                                                   │
 │  ┌──────────────────────────────────────────────┐│
@@ -33,7 +43,7 @@ The SAIA plugin connects OpenCode to SAIA (GWDG Chat AI) models through a layere
 │  │  saia-refresh  ─  Force cache refresh        ││
 │  │  saia-health   ─  API health check           ││
 │  │  saia-optimize ─  Model recommendations      ││
-│  │  saia-switch-profile ─ Profile switching      ││
+│  │  saia-switch-profile ─ Profile switching     ││
 │  │  saia-memory-clear ─  Clear memory           ││
 │  └──────────────────────────────────────────────┘│
 └──────────────────────────────────────────────────┘
@@ -48,8 +58,9 @@ The SAIA plugin connects OpenCode to SAIA (GWDG Chat AI) models through a layere
                      │
                      ▼
 ┌──────────────────────────────────────────────────┐
-│         Shell Scripts (src/*.sh)                 │
-│  generate-saia-config.sh ─ Main config generator │
+│   Optional shell path (src/*.sh, legacy/manual)  │
+│  generate-saia-config.sh ─ Static opencode.json  │
+│  copy-saia-config.sh     ─ Copy to a project     │
 │  validate-config.sh      ─ JSON schema validator │
 │  setup-wizard.sh         ─ Interactive setup     │
 │  merge-config.sh         ─ Config precedence     │
@@ -64,13 +75,19 @@ The SAIA plugin connects OpenCode to SAIA (GWDG Chat AI) models through a layere
 
 ## Data Flow
 
-1. **OpenCode starts** → loads plugin system
-2. **saia.ts is triggered** → checks API cache (24h TTL)
-3. **Cache hit** → uses cached model list
-4. **Cache miss** → fetches from SAIA API → caches result → generates config
-5. **Config generated** → written to opencode-saia.json
-6. **OpenCode reads config** → models become available
-7. **Usage tracked** → each model call logged to usage.jsonl + metrics.json
+1. **OpenCode starts** → discovers `plugins/saia-plugin.ts` → loads `saia/saia.ts`
+2. **API key resolved** → env `SAIA_API_KEY`, `apiKeyCommand`, or `saia.json`
+3. **Models loaded** → memory cache hit (24 h TTL) or a live `/v1/models` fetch
+4. **Provider registered** → V1 `config` hook exposes every ready model under
+   the `saia/` prefix; name/attachment/options are derived from the API
+   response itself (`saia-model-metadata.js`), never hardcoded
+5. **Requests proxied** to the SAIA API using the selected transport
+6. **Rate-limit headers captured** (`x-ratelimit-remaining-*`) and rendered in
+   the TUI quota footer
+7. **Usage/metrics recorded** to `~/.cache/saia/`
+8. **Static `opencode.json`** (installed by `install.sh`) remains as the
+   no-plugin fallback; `reconcile-opencode-models.sh` prunes stale ids from it
+
 
 ## Data Storage
 
@@ -85,14 +102,19 @@ The SAIA plugin connects OpenCode to SAIA (GWDG Chat AI) models through a layere
 
 ~/.config/opencode/
 ├── opencode.json        # OpenCode main config
-├── plugins/saia/        # SAIA plugin files
+├── plugins/saia/        # SAIA plugin runtime files
+├── plugins/saia-plugin.ts # OpenCode discovery entry point
 └── saia-preferences.json # User preferences (favorite model, profile)
 ```
 
 ## Profiles
 
-| Profile    | Model Count | Default Model         | Use Case           |
-|------------|-------------|-----------------------|--------------------|
-| production | ~8-9        | glm-4.7              | Critical work      |
-| dev        | ~7-8        | qwen3.5-35b-a3b      | Active development |
-| budget     | ~4          | llama-3.1-8b-instruct| Cost optimization  |
+Profiles are applied by the shell path (`generate-saia-config.sh`,
+`SAIA_PROFILE=production|development|budget`) and control which models are
+included in the generated config.
+
+| Profile     | Models | Default                  | Use Case           |
+|-------------|--------|--------------------------|--------------------|
+| production  | all 14 | `deepseek-v4-flash-0731` | Critical work      |
+| development | 9      | `qwen3.6-35b-a3b`        | Active development |
+| budget      | 3      | `meta-llama-3.1-8b-instruct` | Cost optimization |

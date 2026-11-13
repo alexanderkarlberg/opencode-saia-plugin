@@ -10,13 +10,23 @@ OpenCode plugin that adds all [SAIA](https://chat-ai.academiccloud.de) (GWDG Cha
 **Other Platforms:**
 - [zot-saia-plugin](https://github.com/tobias-weiss-ai-xr/zot-saia-plugin) — SAIA provider for zot CLI
 - [pi-saia-plugin](https://github.com/tobias-weiss-ai-xr/pi-saia-plugin) — SAIA provider for pi coding agent
-- [pi-l1-cache](https://github.com/tobias-weiss-ai-xr/pi-l1-cache) — Optional L1 caching for pi
 
 ## What It Does
 
-1. Fetches the latest model list from the SAIA API
-2. Generates an `opencode.json` with all SAIA models, properly categorized
-3. Copies it to your project directory so OpenCode picks it up
+At OpenCode startup the plugin registers the `saia` provider and exposes every
+SAIA model to the model picker:
+
+1. Fetches the live model list from the SAIA API once per session (disk-cached
+   with a 24 h TTL) and registers each model under the `saia/` prefix.
+2. On OpenCode 2.x the provider is injected through the plugin API
+   (`ctx.provider.transform`); on OpenCode ≥1.18.29 the same loader feeds the V1
+   `config` hook — one shared code path, both plugin APIs.
+3. Adds a TUI quota widget that shows live rate-limit remaining in the prompt
+   footer.
+
+The bundled shell scripts (`src/generate-saia-config.sh`,
+`src/copy-saia-config.sh`) remain for the standalone/manual path that writes a
+static `opencode.json`.
 
 ## 🔄 Auto-Sync Feature
 
@@ -44,42 +54,58 @@ See [Usage](#usage) for CLI details.
 
 ## Installation
 
-Requires: `SAIA_API_KEY`, `curl`, `jq`
+Requires: OpenCode itself plus a `SAIA_API_KEY`. (`curl`/`jq` are only needed
+for the optional shell-script path.)
+
+### Recommended: install script
 
 ```bash
-# Clone
-git clone https://codeberg.org/graphwiz-ai/opencode-saia-plugin.git
+git clone https://github.com/tobias-weiss-ai-xr/opencode-saia-plugin.git
 cd opencode-saia-plugin
+bash install.sh
+```
 
-# Install as OpenCode plugin
-mkdir -p ~/.config/opencode/plugins
-cp -r src ~/.config/opencode/plugins/saia
-chmod +x ~/.config/opencode/plugins/saia/generate-saia-config.sh
-chmod +x ~/.config/opencode/plugins/saia/copy-saia-config.sh
+`install.sh` copies the runtime into `~/.config/opencode/plugins/saia/`,
+installs the OpenCode entry point at
+`~/.config/opencode/plugins/saia-plugin.ts`, and registers the TUI quota widget
+in `cli.json` (OpenCode 2.x) and `tui.json` (OpenCode 1.x). Pass
+`--transport responses` to use the Responses API instead of the default Chat
+Completions transport. Set `OPENCODE_CONFIG_DIR` first to install somewhere other
+than `~/.config/opencode`.
 
-# Set your API key (Linux/macOS - permanent)
+Then set your API key (or configure `apiKeyCommand`, see below):
+
+```bash
 echo 'export SAIA_API_KEY="your_key_here"' >> ~/.bashrc
 source ~/.bashrc
 ```
 
-**Windows PowerShell:**
-```powershell
-git clone https://codeberg.org/graphwiz-ai/opencode-saia-plugin.git
-cd opencode-saia-plugin
-cp -r src $HOME\.config\opencode\plugins\saia
-[Environment]::SetEnvironmentVariable("SAIA_API_KEY", "your_key_here", "User")
+**Windows PowerShell:** run the same `install.sh` from Git Bash/WSL, and persist
+the key with
+`[Environment]::SetEnvironmentVariable("SAIA_API_KEY", "your_key_here", "User")`.
+
+### Manual install
+
+OpenCode only auto-discovers `plugins/*.{ts,js}` (non-recursively), so the entry
+point must live directly under `plugins/`. To mirror what `install.sh` does:
+
+```bash
+DEST=~/.config/opencode/plugins
+mkdir -p "$DEST"
+cp -r src "$DEST/saia"
+cp src/saia-plugin.ts src/saia-limits-tui.tsx "$DEST/"
 ```
 
 ### Quick Install (One-liner)
 
 **Linux/macOS:**
 ```bash
-curl -fsSL https://codeberg.org/graphwiz-ai/opencode-saia-plugin/raw/branch/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/tobias-weiss-ai-xr/opencode-saia-plugin/main/install.sh | bash
 ```
 
 **Windows PowerShell:**
 ```powershell
-Invoke-WebRequest -Uri "https://codeberg.org/graphwiz-ai/opencode-saia-plugin/raw/branch/master/install.ps1" -UseBasicParsing | Invoke-Expression
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/tobias-weiss-ai-xr/opencode-saia-plugin/main/install.ps1" -UseBasicParsing | Invoke-Expression
 ```
 
 ### Interactive Setup Wizard
@@ -256,13 +282,13 @@ Metrics to track: `time_total` (latency), `usage.prompt_tokens`, `usage.completi
 
 | Problem | Diagnosis | Fix |
 |---|---|---|
-| Plugin not creating `opencode.json` | Script not found or not executable | Run `ls ~/.config/opencode/plugins/saia/` and `echo $SAIA_API_KEY` |
-| Script fails with API error | Invalid key or network issue | Verify API key at [SAIA dashboard](https://chat-ai.academiccloud.de), check firewall |
+| No `saia/*` models appear | Plugin not discovered | Check `~/.config/opencode/plugins/saia-plugin.ts` exists and `echo $SAIA_API_KEY` |
+| "NO API KEY SET" warning | Key not visible to OpenCode | Export `SAIA_API_KEY` or set `apiKeyCommand` in `~/.config/opencode/saia.json` |
+| Plugin fails with API error | Invalid key or network issue | Verify the key at [SAIA dashboard](https://chat-ai.academiccloud.de), check firewall |
 | `curl: command not found` | Missing `curl` | Install: Linux `sudo apt install curl` or macOS `brew install curl` |
 | `jq: command not found` | Missing `jq` | Install: Linux `sudo apt install jq` or macOS `brew install jq` |
 | 429 errors | Rate limit exhausted | Wait or check dashboard quota |
-| Models not showing in OpenCode | Outdated config | Restart OpenCode after running `generate-saia-config.sh` |
-| Plugin not loading | Wrong plugin registration | Check `~/.config/opencode/opencode.json` has `"plugin": ["saia"]` |
+| Quota widget missing | TUI plugin not registered | Re-run `bash install.sh` — it registers `saia-limits-tui.tsx` in `cli.json`/`tui.json` |
 
 ## Environment Variables
 
@@ -273,45 +299,26 @@ Metrics to track: `time_total` (latency), `usage.prompt_tokens`, `usage.completi
 | `SAIA_CACHE_L0` | No | L0 in-memory cache: `true` (default) or `false` to disable |
 | `SAIA_CACHE_L1` | No | L1 disk cache: `true` (default) or `false` to disable |
 
-## Comparison with Original GWDG Plugin
+## Relationship to the Original GWDG Plugin
 
-This fork (Codeberg/graphwiz-ai) is based on the original SAIA plugin by jlewis/GWDG (GitLab-ce) but has diverged with additional features and different approach priorities.
+This project began as a fork of the original SAIA plugin by jlewis/GWDG (GitLab)
+and has since diverged into a native OpenCode plugin rather than an
+`opencode.json` generator.
 
-| Aspect | This Fork (Codeberg) | Upstream (GitLab) | bleedingEdge Branch |
-|--------|----------------------|-------------------|-------------------|
-| **Architecture** | Bash shell scripts (`generate-saia-config.sh`, `copy-saia-config.sh`) | Bash + Node.js (`generate-saia-config.mjs`) | Native Node.js plugin (`saia.ts`) |
-| **Plugin `saia.ts`** | Calls shell scripts (simple, portable) | Native Node.js plugin (auto-refresh from API each launch) | Native Node.js plugin + memory layer (`fetchWithCache`, metrics, preferences) |
-| **Model generation** | Shell: `curl` + `jq` curated categorizations; internal `gitlab/master` reference | Bash scripts; optionally Node.js; uses `fetch()` for live API calls | Live API fetch with 24h TTL cache; metrics and usage tracking; per-project context learning |
-| **Model metadata** | Rich: `can_reason`, `attachment`, `limit.context`, `limit.output`, curated categorization | Adds `options.enable-auto-tool-choice`, `options.tool-call-parser` per model | Same rich metadata as master + project-specific preferences learned from usage |
-| **Provider options** | `options.baseURL`, `apiKey` | Adds then removes `options.headers.inference-service: "saia-openai-gateway"` | Same as master, plus sync with profile switches (production/dev/budget) |
-| **Installation** | `install.sh`/`install.ps1` (adapted for Codeberg URLs); optional `LITELLM_PROXY_URL` | `install.sh`/`install.ps1` (Auto-configures `opencode.json` on first install); optional profile support | Same as master + `.opencode/skills/` directory |
-| **Dedicated docs** | README Sections: Pre-setup, What It Does, Available Models (categories table), Benchmarking, Troubleshooting, Files, Environment Variables, License | README Sections: shorter docs; fewer documented environment variables | All master docs + Memory Layer and SAIA Skills sections + Ref to bleedingEdge features |
-| **Files** | `generate-saia-config.sh`, `copy-saia-config.sh`, `generate-saia-config.mjs` (not present/unused in this fork) | `generate-saia-config.mjs`, `generate-saia-config.sh` (older version) | Adds `src/saia-memory.ts`, `.opencode/skills/*.md` skills files, `package.json`, `tsconfig.json` |
-| **Features** | Model categories: Reasoning, Coder, Vision, Medical, Research, Agentic, Large Context, General; per-model metadata; `.editorconfig`, `LICENSE`, `.gitignore`; JSON validation | Cross-platform Node.js scripts; config-level `formatter: {}`; auto-refresh on launch; permissions toggle | All master features + memory layer (cache, metrics, usage, preferences) + five SAIA skills + model optimization/recommendation + health checks |
-| **Syncs** | `gitlab/master` mirror retained for reference | Origin | Cherry-picks of master improvements; auto-refresh removed (conflicts with curated metadata) |
-| **Commit count since fork** | +13 commits (only in Codeberg) | +16 commits (only in GitLab) | Adds native plugin + memory + skills (staging + commit `c37582b`, commit `68b7c76`) |
+| Aspect | This plugin | Original GWDG (GitLab) |
+|--------|-------------|------------------------|
+| **Integration** | Native OpenCode plugin (dual V1+V2) that registers the `saia` provider at runtime | Bash + Node.js scripts that generate a static `opencode.json` |
+| **Plugin API** | OpenCode 2.x `id` + `setup(ctx)` and OpenCode ≥1.18.29 `server()` | V1 `config` hook |
+| **Model data** | Live `/v1/models` fetch, disk-cached (24 h TTL), plus the curated catalog in `data/saia-models.json` | Scripts that write config on demand |
+| **Extras** | TUI quota widget, L0/L1 cache, usage metrics, model aliases, transport switch | — |
 
-**Common History:** Both repos share commits `b7df10c` through `f2c758b` (9 commits). After that, they took different directions:
-- **Codeberg**: Enhanced model categorization, added metadata, better installation docs, cherry-picked formatter/option fixes
-- **GitLab**: Refactored to native Node.js plugin, added auto-refresh, improved config management
+The shell scripts under `src/` (`generate-saia-config.sh`,
+`copy-saia-config.sh`, `validate-config.sh`, …) are retained for the
+manual/static path. See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the internals.
 
-**References:**
-- Primary (Codeberg/graphwiz-ai): https://codeberg.org/graphwiz-ai/opencode-saia-plugin · tag: `v0.1.3` · commit: `9478ebf`
-- Original (GitLab/jlewis): https://gitlab-ce.gwdg.de/jlewis/opencode-saia-plugin · tag: `v0.1.2` · commit: `8e71b38`
-
-**Why Use This Fork:**
-- Cleaner model categorization (Reasoning, Vision, Medical, etc.)
-- Per-model metadata (context windows, output limits, reasoning flags)
-- Richer documentation (models table, troubleshooting, benchmarking)
-- Cross-platform install scripts (Linux/macOS/Windows)
-- `.editorconfig` for consistent formatting and `.gitignore` for generated files
-
-**Why Use Original:**
-- Native Node.js plugin (no shell dependencies)
-- Auto-refresh from SAIA API on each OpenCode launch
-- Simpler model config generation
-
-**Best Strategy:** Use this fork for production (richer features) → monitor GitLab for architectural improvements (native plugin, auto-refresh). For bleeding-edge features (memory, skills, optimization), switch to `bleedingEdge` branch.
+**Repositories:** development happens on GitHub; the Codeberg remote is a
+periodically synced mirror (the machine-readable catalog is served from
+Codeberg — see above). The GitLab remote is the upstream reference.
 
 ## Configuration Validation
 
@@ -342,24 +349,30 @@ If validation fails, the script will show detailed error messages to help you fi
 
 | File | Purpose |
 |---|---|
-| `src/saia.ts` | OpenCode plugin — master: shell wrapper; `bleedingEdge`: native Node.js plugin |
-| `src/saia-memory.ts` | Memory layer utilities (`bleedingEdge` only) - caching, usage tracking, metrics |
-| `src/validate-config.sh` | JSON schema validator for opencode.json files |
-| `src/setup-wizard.sh` | Interactive first-time setup wizard (validates API key, selects profile) |
-| `src/generate-saia-config.sh` | Fetches models from API, generates master config (master branch) |
-| `src/copy-saia-config.sh` | Copies master config to project directory (master branch) |
-| `src/opencode-saia.json` | Master configuration (generated, 27 models with metadata) |
-| `.opencode/skills/` | SAIA skills directory (`bleedingEdge` only) |
-| `.opencode/skills/saia-refresh.md` | Force-refresh model list skill |
-| `.opencode/skills/saia-health.md` | SAIA API health check skill |
-| `.opencode/skills/saia-optimize.md` | Model optimization / recommendation skill |
-| `.opencode/skills/saia-switch-profile.md` | Profile switcher skill (production/dev/budget) |
-| `.opencode/skills/saia-memory-clear.md` | Clear all SAIA memory skill |
+| `install.sh` / `install.ps1` | One-command installers (Linux/macOS, Windows) |
+| `src/install-runtime.mjs` | Copies the runtime + entry point into `~/.config/opencode/plugins/` |
+| `src/runtime-manifest.mjs` | Single source of truth for the installed file set |
+| `src/install-tui-config.mjs` | Registers the TUI widget in `cli.json` / `tui.json` |
+| `src/saia-plugin.ts` | OpenCode discovery entry point (re-exports the plugin) |
+| `src/saia.ts` | Dual V1+V2 plugin: model loader, provider registration, config hook |
+| `src/saia-v2.mjs` | OpenCode 2.x provider decoration + provider metadata |
+| `src/saia-limits-server.js` | Captures `x-ratelimit-remaining-*` headers |
+| `src/saia-limits-tui.tsx` | TUI quota widget (prompt footer) |
+| `src/saia-memory.ts` | L0/L1 cache, usage tracking, metrics, preferences |
+| `src/saia-api-key.mjs` | API-key resolution (env var / `apiKeyCommand` / settings) |
+| `src/saia-transport.mjs`, `src/set-saia-transport.mjs` | Transport selection (chat-completions / responses) |
+| `src/saia-config.mjs`, `src/saia-model-metadata.js` | Model-response parsing and per-model metadata |
+| `src/saia-system-messages.js` | Qwen system-message normalization |
+| `src/setup-wizard.sh` | Interactive first-time setup wizard (validates the API key) |
+| `src/generate-saia-config.sh` | Shell path: fetch models → master config |
+| `src/copy-saia-config.sh` | Shell path: copy the master config into a project |
+| `src/validate-config.sh` | JSON-schema validator for `opencode.json` |
+| `src/opencode-saia.json` | Generated master configuration used by the shell path |
+| `.opencode/skills/*.md` | SAIA skills: `saia-refresh`, `saia-health`, `saia-optimize`, `saia-switch-profile`, `saia-memory-clear` |
 | `schema/opencode.schema.json` | JSON schema for configuration validation |
-| `package.json` | Node.js dependencies (`bleedingEdge` only) |
-| `tsconfig.json` | TypeScript configuration (`bleedingEdge` only) |
-| `install.sh/install.ps1` | One-click installers (Linux/macOS/Windows) |
-| `opencode.json.example` | Example opencode.json for reference |
+| `scripts/collect-saia-model-info.mjs` | Builds `data/saia-models.json` from the API, GWDG docs and the reasoning map |
+| `data/saia-models.json` | Machine-readable model catalog (14 models) |
+| `opencode.json.example` | Example `opencode.json` for reference |
 | `LICENSE` | MIT License |
 
 ## License

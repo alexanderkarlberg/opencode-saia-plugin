@@ -51,10 +51,10 @@ jobs:
 
             ### Installation
             ```bash
-            curl -fsSL https://codeberg.org/graphwiz-ai/opencode-saia-plugin/raw/branch/master/install.sh | bash
+            curl -fsSL https://codeberg.org/graphwiz-ai/opencode-saia-plugin/raw/branch/main/install.sh | bash
             ```
 
-            See [README.md](https://codeberg.org/graphwiz-ai/opencode-saia-plugin/src/branch/master/README.md) for full documentation.
+            See [README.md](https://codeberg.org/graphwiz-ai/opencode-saia-plugin/src/branch/main/README.md) for full documentation.
           draft: false
           prerelease: false
 

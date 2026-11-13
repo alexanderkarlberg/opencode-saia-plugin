@@ -4,7 +4,8 @@
 
 | Version | Supported |
 |---------|-----------|
-| 0.3.x   | Yes       |
+| 0.4.x   | Yes       |
+| 0.3.x   | No        |
 | 0.2.x   | No        |
 | 0.1.x   | No        |
 
@@ -15,6 +16,8 @@ The SAIA plugin for OpenCode connects to the GWDG Chat AI API to provide AI mode
 ### API Key Management
 
 - The `SAIA_API_KEY` environment variable must be set by the user
+- Alternatively, an `apiKeyCommand` in `~/.config/opencode/saia.json` can read
+  the key from a password manager so it is never written to disk in plain text
 - API keys are NEVER logged to console output
   - Error messages mask keys: show only first 4 and last 4 characters
   - Example: `abc...xyz` instead of `abcdef123456xyz789`
@@ -42,8 +45,11 @@ The SAIA plugin for OpenCode connects to the GWDG Chat AI API to provide AI mode
 
 ### Reporting a Vulnerability
 
-Report security issues by opening an issue at:
-https://codeberg.org/graphwiz-ai/opencode-saia-plugin/issues
+Please report security issues privately, not in a public issue:
 
-Please do NOT report security vulnerabilities via public GitHub issues.
-Use Codeberg's security contact mechanism instead.
+- **GitHub (primary):** open a private advisory via
+  https://github.com/tobias-weiss-ai-xr/opencode-saia-plugin/security/advisories/new
+- **Codeberg (mirror):** use Codeberg's security contact mechanism at
+  https://codeberg.org/graphwiz-ai/opencode-saia-plugin
+
+Do not disclose the vulnerability publicly until a fix has been released.

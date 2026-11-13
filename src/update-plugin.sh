@@ -47,7 +47,7 @@ restore_entry_points() {
 
 check_version() {
     local latest
-    latest=$(curl -s --max-time 10 "${REMOTE_URL}/raw/branch/master/package.json" | jq -r '.version' 2>/dev/null || echo "")
+    latest=$(curl -s --max-time 10 "${REMOTE_URL}/raw/branch/main/package.json" | jq -r '.version' 2>/dev/null || echo "")
     if [[ -z "$latest" ]]; then
         print_error "Could not fetch latest version"
         return 1
@@ -74,7 +74,7 @@ do_update() {
     fi
     print_info "Downloading latest from $REMOTE_URL"
     local tmpdir=$(mktemp -d)
-    curl -fsSL "${REMOTE_URL}/archive/master.tar.gz" | tar xz -C "$tmpdir"
+    curl -fsSL "${REMOTE_URL}/archive/main.tar.gz" | tar xz -C "$tmpdir"
     local source_dir
     source_dir=""
     while IFS= read -r installer; do
