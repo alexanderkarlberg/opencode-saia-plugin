@@ -15,26 +15,25 @@ re-exports the runtime plugin at `plugins/saia/saia.ts`.
 │  │  │   plugins/saia-plugin.ts (entry)     │    ││
 │  │  └───────────────┬──────────────────────┘    ││
 │  │  ┌───────────────▼──────────────────────┐    ││
-│  │  │   saia/saia.ts (dual V1+V2 plugin)   │    ││
+│  │  │   saia/saia.ts (V1 plugin)           │    ││
 │  │  │  - Resolves the API key              │    ││
 │  │  │  - Fetches the model list from API   │    ││
 │  │  │  - Registers the `saia` provider     │    ││
-│  │  │    (V2: ctx.provider.transform;      │    ││
-│  │  │     V1: config hook)                 │    ││
+│  │  │    via the V1 config hook            │    ││
 │  │  │  - Applies the transport choice      │    ││
 │  │  └───┬────────────────┬─────────────────┘    ││
 │  │      │                │                       ││
 │  │  ┌───▼───────────┐ ┌──▼──────────────────┐    ││
-│  │  │ saia-v2.mjs   │ │ saia-memory.ts      │    ││
-│  │  │ V2 provider   │ │ - API cache (24h)   │    ││
-│  │  │ decoration +  │ │ - Usage tracking    │    ││
-│  │  │ provider info │ │ - Metrics           │    ││
+│  │  │ saia-model-   │ │ saia-memory.ts      │    ││
+│  │  │ metadata.js   │ │ - API cache (24h)   │    ││
+│  │  │ derives name/ │ │ - Usage tracking    │    ││
+│  │  │ attachment    │ │ - Metrics           │    ││
 │  │  └───────────────┘ │ - Preferences       │    ││
 │  │  ┌───────────────┐ └─────────────────────┘    ││
 │  │  │ saia-limits-  │                            ││
 │  │  │ server.js     │  captures x-ratelimit-*    ││
-│  │  │ saia-limits-  │  headers → prompt footer   ││
-│  │  │ tui.tsx       │                            ││
+│  │  │ saia-limits-  │  headers → quota widget    ││
+│  │  │ tui.tsx       │  (session_prompt_right)    ││
 │  │  └───────────────┘                            ││
 │  └──────────────────────────────────────────────┘│
 │                                                   │

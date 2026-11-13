@@ -18,11 +18,11 @@ SAIA model to the model picker:
 
 1. Fetches the live model list from the SAIA API once per session (disk-cached
    with a 24 h TTL) and registers each model under the `saia/` prefix.
-2. On OpenCode 2.x the provider is injected through the plugin API
-   (`ctx.provider.transform`); on OpenCode ≥1.18.29 the same loader feeds the V1
-   `config` hook — one shared code path, both plugin APIs.
-3. Adds a TUI quota widget that shows live rate-limit remaining in the prompt
-   footer.
+2. Registers the models through the V1 plugin API (`config` hook); name,
+   attachment and tool options are derived from the API response itself, so a
+   changed SAIA line-up needs no plugin update.
+3. Adds a TUI quota widget that shows live rate-limit remaining in the
+   `session_prompt_right` slot.
 
 The bundled shell scripts (`src/generate-saia-config.sh`,
 `src/copy-saia-config.sh`) remain for the standalone/manual path that writes a
@@ -68,7 +68,7 @@ bash install.sh
 `install.sh` copies the runtime into `~/.config/opencode/plugins/saia/`,
 installs the OpenCode entry point at
 `~/.config/opencode/plugins/saia-plugin.ts`, and registers the TUI quota widget
-in `cli.json` (OpenCode 2.x) and `tui.json` (OpenCode 1.x). Pass
+in `tui.json`. Pass
 `--transport responses` to use the Responses API instead of the default Chat
 Completions transport. Set `OPENCODE_CONFIG_DIR` first to install somewhere other
 than `~/.config/opencode`.
@@ -307,9 +307,9 @@ and has since diverged into a native OpenCode plugin rather than an
 
 | Aspect | This plugin | Original GWDG (GitLab) |
 |--------|-------------|------------------------|
-| **Integration** | Native OpenCode plugin (dual V1+V2) that registers the `saia` provider at runtime | Bash + Node.js scripts that generate a static `opencode.json` |
-| **Plugin API** | OpenCode 2.x `id` + `setup(ctx)` and OpenCode ≥1.18.29 `server()` | V1 `config` hook |
-| **Model data** | Live `/v1/models` fetch, disk-cached (24 h TTL), plus the curated catalog in `data/saia-models.json` | Scripts that write config on demand |
+| **Integration** | Native OpenCode plugin that registers the `saia` provider at runtime | Bash + Node.js scripts that generate a static `opencode.json` |
+| **Plugin API** | V1 plugin: `config` hook + `server()` | V1 `config` hook |
+| **Model data** | Live `/v1/models` fetch, disk-cached (24 h TTL), metadata derived from the API response | Scripts that write config on demand |
 | **Extras** | TUI quota widget, L0/L1 cache, usage metrics, model aliases, transport switch | — |
 
 The shell scripts under `src/` (`generate-saia-config.sh`,
@@ -352,12 +352,11 @@ If validation fails, the script will show detailed error messages to help you fi
 | `install.sh` / `install.ps1` | One-command installers (Linux/macOS, Windows) |
 | `src/install-runtime.mjs` | Copies the runtime + entry point into `~/.config/opencode/plugins/` |
 | `src/runtime-manifest.mjs` | Single source of truth for the installed file set |
-| `src/install-tui-config.mjs` | Registers the TUI widget in `cli.json` / `tui.json` |
+| `src/install-tui-config.mjs` | Registers the TUI widget in `tui.json` |
 | `src/saia-plugin.ts` | OpenCode discovery entry point (re-exports the plugin) |
-| `src/saia.ts` | Dual V1+V2 plugin: model loader, provider registration, config hook |
-| `src/saia-v2.mjs` | OpenCode 2.x provider decoration + provider metadata |
+| `src/saia.ts` | Plugin: model loader, provider registration, config hook |
 | `src/saia-limits-server.js` | Captures `x-ratelimit-remaining-*` headers |
-| `src/saia-limits-tui.tsx` | TUI quota widget (prompt footer) |
+| `src/saia-limits-tui.tsx` | TUI quota widget (`session_prompt_right` slot) |
 | `src/saia-memory.ts` | L0/L1 cache, usage tracking, metrics, preferences |
 | `src/saia-api-key.mjs` | API-key resolution (env var / `apiKeyCommand` / settings) |
 | `src/saia-transport.mjs`, `src/set-saia-transport.mjs` | Transport selection (chat-completions / responses) |
@@ -370,8 +369,6 @@ If validation fails, the script will show detailed error messages to help you fi
 | `src/opencode-saia.json` | Generated master configuration used by the shell path |
 | `.opencode/skills/*.md` | SAIA skills: `saia-refresh`, `saia-health`, `saia-optimize`, `saia-switch-profile`, `saia-memory-clear` |
 | `schema/opencode.schema.json` | JSON schema for configuration validation |
-| `scripts/collect-saia-model-info.mjs` | Builds `data/saia-models.json` from the API, GWDG docs and the reasoning map |
-| `data/saia-models.json` | Machine-readable model catalog (14 models) |
 | `opencode.json.example` | Example `opencode.json` for reference |
 | `LICENSE` | MIT License |
 

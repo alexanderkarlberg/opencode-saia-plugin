@@ -2,7 +2,7 @@
 
 This roadmap tracks what has shipped and what is still open. The plugin was
 originally a thin shell/`opencode.json` generator; it is now a native OpenCode
-plugin (dual V1+V2) that registers the `saia` provider at runtime. Much of the
+plugin that registers the `saia` provider at runtime. Much of the
 original roadmap is therefore already implemented.
 
 ---
@@ -11,7 +11,7 @@ original roadmap is therefore already implemented.
 
 | Capability | Where |
 |---|---|
-| Native OpenCode plugin (V1 + V2) | `src/saia.ts`, `src/saia-v2.mjs`, `src/saia-plugin.ts` |
+| Native OpenCode plugin (V1) | `src/saia.ts`, `src/saia-plugin.ts` |
 | Live model discovery with 24 h disk cache | `src/saia.ts`, `src/saia-memory.ts` |
 | Provider registration / config decoration | `src/saia.ts`, `src/saia-model-metadata.js` |
 | L0/L1 caching, usage tracking, metrics | `src/saia-memory.ts` |
@@ -23,7 +23,7 @@ original roadmap is therefore already implemented.
 | JSON-schema config validation | `src/validate-config.sh`, `schema/opencode.schema.json` |
 | Interactive setup wizard | `src/setup-wizard.sh` |
 | Plugin self-update / release prep | `src/update-plugin.sh`, `prepare-release.sh` |
-| Machine-readable model catalog | `scripts/collect-saia-model-info.mjs`, `data/saia-models.json` |
+| Model metadata derived from the live API | `src/saia-model-metadata.js`, `src/reconcile-opencode-models.sh` |
 | Health / analytics / A-B / config-sync scripts | `src/health-report.sh`, `src/analytics-report.sh`, `src/ab-test.sh`, `src/sync-config.sh`, `src/merge-config.sh` |
 | One-command cross-platform installers | `install.sh`, `install.ps1` |
 

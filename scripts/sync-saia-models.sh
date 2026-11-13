@@ -50,53 +50,42 @@ print_info "Found $MODEL_COUNT models from SAIA API"
 # Format: id|reasoning|input_types|context|max_tokens|description|cost_per_1k|latency
 declare -A MODEL_METADATA=(
     # Reasoning models
-    ["qwen3.8-2.4t-a95b"]="true|text|256000|65536|Qwen 3.8 2.4T A95B (SAIA)|0.125|very-slow"
-    ["qwen3.5-397b-a17b"]="true|text,image|131072|32768|Qwen 3.5 397B (SAIA)|0.125|very-slow"
-    ["qwen3.5-122b-a10b"]="true|text,image|131072|32768|Qwen 3.5 122B (SAIA)|0.075|slow"
-    ["qwen3-30b-a3b-instruct-2507"]="true|text|131072|16384|Qwen 3 30B (SAIA)|0.018|moderate"
-    
+    ["qwen3.5-397b-a17b"]="true|text,image|256000|32768|Qwen 3.5 397B (SAIA)|0.006|moderate"
+    ["qwen3.6-35b-a3b"]="true|text,image|262000|16384|Qwen 3.6 35B (SAIA)|0.018|fast"
+    ["qwen3.8-27b"]="true|text,image|262000|32768|Qwen 3.8 27B (SAIA)|0.006|fast"
+    ["qwen3-30b-a3b-instruct-2507"]="false|text|256000|16384|Qwen 3 30B (SAIA)|0.018|moderate"
+
     # Agentic models
-    ["devstral-2-123b-instruct-2512"]="false|text|131072|16384|DevStral 2 123B (SAIA)|0.075|slow"
-    ["mistral-medium-3.5-128b"]="false|text|131072|8192|Mistral Medium 3.5 128B (SAIA)|0.075|slow"
-    ["qwen3.6-35b-a3b"]="false|text,image|131072|16384|Qwen 3.6 35B (SAIA)|0.018|moderate"
-    
+    ["mistral-large-4-1t-a52b"]="true|text,image|1048576|32768|Mistral Large 4 1T (SAIA)|0.150|moderate"
+    ["glm-5.3"]="true|text,image|1000000|32768|GLM 5.3 (SAIA)|0.015|moderate"
+    ["glm-5.3-flash"]="true|text,image|1000000|32768|GLM 5.3 Flash (SAIA)|0.015|fast"
+    ["deepseek-v4-flash-0731"]="true|text|1000000|32768|DeepSeek V4 Flash (SAIA)|0.008|fast"
+    ["deepseek-v4.1-flash-1017"]="true|text,image|1048576|32768|DeepSeek V4.1 Flash (SAIA)|0.015|moderate"
+
     # Coder
-    ["qwen3-coder-next"]="false|text|131072|16384|Qwen 3 Coder Next (SAIA)|0.015|fast"
-    
-    # Large Context
-    ["openai-gpt-oss-120b"]="false|text|131072|8192|GPT-OSS 120B (SAIA)|0.075|slow"
-    
-    # Medical
-    ["medgemma-27b-it"]="false|text,image|32768|4096|MedGemma 27B (SAIA)|0.012|moderate"
-    
+    ["qwen3-coder-next"]="false|text|256000|16384|Qwen 3 Coder Next (SAIA)|0.015|fast"
+
     # Vision
-    ["qwen3-omni-30b-a3b-instruct"]="false|text,image|32768|4096|Qwen 3 Omni 30B (SAIA)|0.018|moderate"
-    
+    ["qwen3-omni-30b-a3b-instruct"]="false|text,image|256000|4096|Qwen 3 Omni 30B (SAIA)|0.018|moderate"
+
     # General
-    ["qwen3.8-27b"]="false|text,image|131072|32768|Qwen 3.8 27B (SAIA)|0.006|moderate"
-    ["deepseek-v4-flash-0731"]="false|text|131072|16384|DeepSeek V4 Flash (SAIA)|0.008|fast"
-    ["qwen3.6-27b"]="false|text|131072|16384|Qwen 3.6 27B (SAIA)|0.006|moderate"
-    ["gemma-4-31b-it"]="false|text,image|131072|8192|Gemma 4 31B (SAIA)|0.012|moderate"
-    ["apertus-70b-instruct-2509"]="false|text|131072|8192|Apertus 70B (SAIA)|0.025|slow"
-    ["meta-llama-3.1-8b-instruct"]="false|text|131072|4096|Meta Llama 3.1 8B (SAIA)|0.003|fast"
-    ["glm-4.7"]="false|text|131072|16384|GLM 4.7 (SAIA)|0.015|fast"
+    ["gemma-4-31b-it"]="false|text,image|256000|8192|Gemma 4 31B (SAIA)|0.012|fast"
+    ["eurollm-22b-instruct-2512"]="false|text|32768|8192|EuroLLM 22B (SAIA)|0.015|moderate"
+    ["meta-llama-3.1-8b-instruct"]="false|text|128000|4096|Meta Llama 3.1 8B (SAIA)|0.003|fast"
 )
 
 # Models to add even if not in API response (newly released, not yet deployed)
-declare -a FORCE_INCLUDE_MODELS=(
-    "qwen3.8-2.4t-a95b"
-    "qwen3.8-27b"
-)
+declare -a FORCE_INCLUDE_MODELS=()
 
 # Aliases
 declare -A ALIASES=(
     ["best-for-coding"]="qwen3-coder-next"
-    ["best-for-reasoning"]="qwen3.8-2.4t-a95b"
-    ["best-quality"]="qwen3.8-2.4t-a95b"
-    ["best-for-vision"]="qwen3.8-27b"
-    ["best-for-agentic"]="glm-4.7"
+    ["best-for-reasoning"]="qwen3.5-397b-a17b"
+    ["best-quality"]="qwen3.5-397b-a17b"
+    ["best-for-vision"]="qwen3.6-35b-a3b"
+    ["best-for-agentic"]="deepseek-v4-flash-0731"
     ["fastest"]="meta-llama-3.1-8b-instruct"
-    ["fastest-reasoning"]="qwen3.8-27b"
+    ["fastest-reasoning"]="deepseek-v4-flash-0731"
     ["budget"]="deepseek-v4-flash-0731"
 )
 
@@ -104,7 +93,7 @@ declare -A ALIASES=(
 categorize() {
     local id="$1"
     case "$id" in
-        *thinking*|*r1*|qwen3.8-2.4t-a95b|qwen3.5-397b-a17b|qwen3.5-122b-a10b|qwen3-30b-a3b-instruct-2507)
+        qwen3.5-397b-a17b|qwen3.6-35b-a3b|qwen3.8-27b|qwen3-30b-a3b-instruct-2507)
             echo "reasoning"
             ;;
         *coder*)
@@ -113,10 +102,7 @@ categorize() {
         *omni*|*vl-*|*vision*|internvl*)
             echo "vision"
             ;;
-        medgemma*)
-            echo "medical"
-            ;;
-        devstral*|mistral-medium*|glm-4.7)
+        mistral-large*|glm-5.3*|deepseek-v4*|qwen3.5*|qwen3.6*|qwen3.8*)
             echo "agentic"
             ;;
         *120b|*128b|*235b|*675b)

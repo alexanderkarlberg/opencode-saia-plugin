@@ -3,7 +3,7 @@
 ## General
 
 **Q: Which OpenCode versions are supported?**
-A: OpenCode 2.x since plugin v0.4.0, and OpenCode ≥1.18.29. The plugin exports the dual V1+V2 definition; the TUI quota widget uses the `prompt.footer` slot on 2.x and `session_prompt_right` on 1.x.
+A: OpenCode ≥1.18.16 (plugin v0.4.x, developed against `@opencode-ai/plugin` 1.18.16). The plugin is a plain V1 plugin; the TUI quota widget registers in the `session_prompt_right` slot via `tui.json`.
 
 **Q: How do I switch models in OpenCode?**
 A: Use `/model saia/<model-name>` in OpenCode. For example: `/model saia/glm-4.7`. You can also use aliases like `/model saia/best-for-coding`.
