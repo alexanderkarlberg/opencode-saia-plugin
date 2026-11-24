@@ -235,8 +235,8 @@ test("v2 setup registers hooks, replaces the inventory, and injects the API key"
   // http.response hook persists quota headers as session metadata.
   const response = new Response("", {
     headers: {
-      "x-ratelimit-remaining-minute": "26",
-      "x-ratelimit-remaining-hour": "128",
+      "x-ratelimit-remaining-requests-10s": "26",
+      "x-ratelimit-remaining-requests-hour": "128",
     },
   })
   await harness.calls.hooks[0].callback({
@@ -248,7 +248,8 @@ test("v2 setup registers hooks, replaces the inventory, and injects the API key"
 
   assert.equal(harness.calls.sessionUpdates.length, 1)
   assert.equal(harness.calls.sessionUpdates[0].sessionID, "ses_1")
-  assert.equal(harness.calls.sessionUpdates[0].metadata.saiaLimits.minute, "26")
+  assert.equal(harness.calls.sessionUpdates[0].metadata.saiaLimits.tenSeconds, "26")
+  assert.equal(harness.calls.sessionUpdates[0].metadata.saiaLimits.hour, "128")
 
   // The context hook merges Qwen system parts in place.
   const system = [{ type: "text", text: "One" }, { type: "text", text: "Two" }]

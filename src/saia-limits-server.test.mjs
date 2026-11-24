@@ -3,11 +3,10 @@ import test from "node:test"
 import plugin, { createSaiaLimitsHooks } from "./saia-limits-server.js"
 
 const RATE_LIMIT_HEADERS = {
-  "x-ratelimit-remaining-minute": "9",
-  "x-ratelimit-remaining-hour": "199",
-  "x-ratelimit-remaining-day": "398",
-  "x-ratelimit-remaining-month": "2998",
-  "ratelimit-reset": "8",
+  "x-ratelimit-remaining-requests-10s": "9",
+  "x-ratelimit-remaining-requests-hour": "199",
+  "x-ratelimit-remaining-requests-day": "398",
+  "x-ratelimit-reset-requests-10s": "8",
 }
 
 const LITELLM_RATE_LIMIT_HEADERS = Object.fromEntries(
@@ -94,13 +93,12 @@ test("records rate limits and strips the internal header before the request leav
   assert.equal(metadata.preserved, "value", "existing session metadata must survive the patch")
   assert.deepEqual(
     {
-      minute: metadata.saiaLimits.minute,
+      tenSeconds: metadata.saiaLimits.tenSeconds,
       hour: metadata.saiaLimits.hour,
       day: metadata.saiaLimits.day,
-      month: metadata.saiaLimits.month,
       resetSec: metadata.saiaLimits.resetSec,
     },
-    { minute: "9", hour: "199", day: "398", month: "2998", resetSec: "8" },
+    { tenSeconds: "9", hour: "199", day: "398", resetSec: "8" },
   )
   assert.match(metadata.saiaLimits.updatedAt, /^\d{4}-\d{2}-\d{2}T/)
 })
@@ -162,13 +160,12 @@ test("records LiteLLM-prefixed quota headers", async () => {
   const { saiaLimits } = calls.patches[0].body.metadata
   assert.deepEqual(
     {
-      minute: saiaLimits.minute,
+      tenSeconds: saiaLimits.tenSeconds,
       hour: saiaLimits.hour,
       day: saiaLimits.day,
-      month: saiaLimits.month,
       resetSec: saiaLimits.resetSec,
     },
-    { minute: "9", hour: "199", day: "398", month: "2998", resetSec: "8" },
+    { tenSeconds: "9", hour: "199", day: "398", resetSec: "8" },
   )
 })
 
@@ -191,10 +188,9 @@ test("prefers direct SAIA quota headers over LiteLLM-prefixed equivalents", asyn
   await hooks.flush()
 
   const { saiaLimits } = calls.patches[0].body.metadata
-  assert.equal(saiaLimits.minute, "9")
+  assert.equal(saiaLimits.tenSeconds, "9")
   assert.equal(saiaLimits.hour, "199")
   assert.equal(saiaLimits.day, "398")
-  assert.equal(saiaLimits.month, "2998")
   assert.equal(saiaLimits.resetSec, "8")
 })
 
@@ -351,7 +347,7 @@ test("serializes concurrent metadata updates for one session", async () => {
   config.provider.saia.options.fetch = async (_input, init) => {
     const headers = new Headers(init?.headers)
     return new Response("", {
-      headers: { "x-ratelimit-remaining-minute": headers.get("x-test-limit") },
+      headers: { "x-ratelimit-remaining-requests-10s": headers.get("x-test-limit") },
     })
   }
 
@@ -369,8 +365,8 @@ test("serializes concurrent metadata updates for one session", async () => {
 
   assert.equal(maxActiveGets, 1)
   assert.equal(calls.patches.length, 2)
-  assert.equal(calls.patches[0].body.metadata.saiaLimits.minute, "5")
-  assert.equal(calls.patches[1].body.metadata.saiaLimits.minute, "4")
+  assert.equal(calls.patches[0].body.metadata.saiaLimits.tenSeconds, "5")
+  assert.equal(calls.patches[1].body.metadata.saiaLimits.tenSeconds, "4")
   assert.equal(calls.patches[1].body.metadata.preserved, "value")
 })
 
@@ -407,22 +403,21 @@ test("v2: records quota headers from http.response as session metadata", async (
 
   assert.equal(updates.length, 1)
   assert.equal(updates[0].sessionID, "ses_v2")
-  assert.equal(updates[0].metadata.saiaLimits.minute, "9")
-  assert.equal(updates[0].metadata.saiaLimits.month, "2998")
+  assert.equal(updates[0].metadata.saiaLimits.tenSeconds, "9")
 })
 
 test("v2: merges into existing metadata and keeps sessions separate", async () => {
   const { hooks, event, respond, updates } = setupV2()
 
-  await hooks["http.response"](event(respond({ "x-ratelimit-remaining-minute": "1" }), "ses_a"))
+  await hooks["http.response"](event(respond({ "x-ratelimit-remaining-requests-10s": "1" }), "ses_a"))
   await hooks.flush()
-  await hooks["http.response"](event(respond({ "x-ratelimit-remaining-minute": "2" }), "ses_b"))
+  await hooks["http.response"](event(respond({ "x-ratelimit-remaining-requests-10s": "2" }), "ses_b"))
   await hooks.flush()
 
   assert.equal(updates.length, 2)
   assert.equal(updates[0].sessionID, "ses_a")
   assert.equal(updates[1].sessionID, "ses_b")
-  assert.equal(updates[1].metadata.saiaLimits.minute, "2")
+  assert.equal(updates[1].metadata.saiaLimits.tenSeconds, "2")
 })
 
 test("v2: reads LiteLLM-prefixed quota headers", async () => {
@@ -452,12 +447,12 @@ test("v2: ignores other providers and responses without quota headers", async ()
 test("v2: serializes concurrent metadata updates for one session", async () => {
   const { hooks, event, respond, updates } = setupV2()
 
-  await hooks["http.response"](event(respond({ "x-ratelimit-remaining-minute": "10" })))
-  await hooks["http.response"](event(respond({ "x-ratelimit-remaining-minute": "3" })))
+  await hooks["http.response"](event(respond({ "x-ratelimit-remaining-requests-10s": "10" })))
+  await hooks["http.response"](event(respond({ "x-ratelimit-remaining-requests-10s": "3" })))
   await hooks.flush()
 
   assert.equal(updates.length, 2)
   // The second save observed the first one's metadata write.
-  assert.equal(updates[0].metadata.saiaLimits.minute, "10")
-  assert.equal(updates[1].metadata.saiaLimits.minute, "3")
+  assert.equal(updates[0].metadata.saiaLimits.tenSeconds, "10")
+  assert.equal(updates[1].metadata.saiaLimits.tenSeconds, "3")
 })
