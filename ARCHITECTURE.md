@@ -3,8 +3,9 @@
 ## Overview
 
 The SAIA plugin connects OpenCode to SAIA (GWDG Chat AI) models through a
-layered architecture. OpenCode discovers `plugins/saia-plugin.ts`, which
-re-exports the runtime plugin at `plugins/saia/saia.ts`.
+layered architecture. OpenCode discovers the plugin package at
+`plugins/saia/` — its server entry `index.ts` re-exports the runtime plugin
+at `plugins/saia/saia.ts`.
 
 ```
 ┌──────────────────────────────────────────────────┐
@@ -12,7 +13,7 @@ re-exports the runtime plugin at `plugins/saia/saia.ts`.
 │  ┌──────────────────────────────────────────────┐│
 │  │           Plugin System                       ││
 │  │  ┌──────────────────────────────────────┐    ││
-│  │  │   plugins/saia-plugin.ts (entry)     │    ││
+│  │  │   plugins/saia/index.ts (entry)      │    ││
 │  │  └───────────────┬──────────────────────┘    ││
 │  │  ┌───────────────▼──────────────────────┐    ││
 │  │  │   saia/saia.ts (V1 plugin)           │    ││
@@ -33,7 +34,7 @@ re-exports the runtime plugin at `plugins/saia/saia.ts`.
 │  │  │ saia-limits-  │                            ││
 │  │  │ server.js     │  captures x-ratelimit-*    ││
 │  │  │ saia-limits-  │  headers → quota widget    ││
-│  │  │ tui.tsx       │  (session_prompt_right)    ││
+│  │  │ tui.tsx       │  (prompt.footer slot)      ││
 │  │  └───────────────┘                            ││
 │  └──────────────────────────────────────────────┘│
 │                                                   │
@@ -79,7 +80,7 @@ The plugin default-exports the dual V1+V2 definition: OpenCode 2.x calls
 hooks), OpenCode ≥1.18.29 calls `server()` (V1 `config`/`chat.headers`/
 `experimental.chat.system.transform` hooks). Both paths share one model loader.
 
-1. **OpenCode starts** → discovers `plugins/saia-plugin.ts` → loads `saia/saia.ts`
+1. **OpenCode starts** → discovers `plugins/saia/index.ts` → loads `saia/saia.ts`
 2. **API key resolved** → env `SAIA_API_KEY`, `apiKeyCommand`, or `saia.json`
 3. **Models loaded** → memory cache hit (24 h TTL) or a live `/v1/models` fetch
 4. **Provider registered** → V1 `config` hook exposes every ready model under
@@ -106,8 +107,7 @@ hooks), OpenCode ≥1.18.29 calls `server()` (V1 `config`/`chat.headers`/
 
 ~/.config/opencode/
 ├── opencode.json        # OpenCode main config
-├── plugins/saia/        # SAIA plugin runtime files
-├── plugins/saia-plugin.ts # OpenCode discovery entry point
+├── plugins/saia/        # SAIA plugin runtime + entry points (index.ts, tui.tsx)
 └── saia-preferences.json # User preferences (favorite model, profile)
 ```
 

@@ -59,7 +59,7 @@ if (-not (Test-Path $configFile)) {
 
 Write-Host ""
 Write-Host "✓ Plugin installed to $targetDir"
-Write-Host "  OpenCode entry point: $(Join-Path $pluginsDir 'saia-plugin.ts')"
+Write-Host "  OpenCode entry point: $(Join-Path $targetDir 'index.ts')"
 $transportLabel = $Transport
 if (-not $transportLabel) {
   $transportLabel = "configured setting or chat-completions default"

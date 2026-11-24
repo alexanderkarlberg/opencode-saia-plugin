@@ -23,13 +23,13 @@ test("server plugin exports the dual V1+V2 definition", async () => {
 })
 
 test("formats quota labels and registers the TUI prompt footer slot", async () => {
-  const limits = { minute: "26", hour: "128", day: "530", month: "2500" }
+  const limits = { tenSeconds: "26", tenSecondsLimit: "10", hour: "128", hourLimit: "400", day: "530", dayLimit: "800" }
 
   assert.equal(
-    displayLimits({ minute: "9", hour: "199", day: null, month: "2998" }),
-    "9/m · 199/h · 3k/mo",
+    displayLimits({ tenSeconds: "9", hour: "199", day: null }),
+    "9/10s · 199/h",
   )
-  assert.equal(displayLimits(limits), "26/m · 128/h · 530/d · 2.5k/mo")
+  assert.equal(displayLimits(limits), "26/10 10s · 128/400 h · 530/800 d")
   assert.equal(displayLimits({}), "")
 
   let claim

@@ -1,9 +1,13 @@
-import { copyFile, chmod, mkdir, realpath, rename, rm } from "node:fs/promises"
+import { copyFile, chmod, mkdir, realpath, rename, rm, unlink, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
-import { installTuiPlugin } from "./install-tui-config.mjs"
-import { SAIA_PLUGIN_ROOT_FILES, SAIA_RUNTIME_FILES } from "./runtime-manifest.mjs"
+import { removeTuiPluginRegistration } from "./install-tui-config.mjs"
+import {
+  SAIA_ENTRY_FILES,
+  SAIA_LEGACY_ENTRY_FILES,
+  SAIA_RUNTIME_FILES,
+} from "./runtime-manifest.mjs"
 
 function defaultConfigDir() {
   return path.join(homedir(), ".config", "opencode")
@@ -31,15 +35,27 @@ export async function installRuntime(sourceDir, configDir = defaultConfigDir()) 
       await copyRuntimeFile(sourceDir, stagingDir, file)
     }
 
+    // Entrypoints are staged under their discovered names (index.ts / tui.tsx).
+    for (const { source, destination } of SAIA_ENTRY_FILES) {
+      await copyRuntimeFile(sourceDir, stagingDir, source)
+      await rename(path.join(stagingDir, source), path.join(stagingDir, destination))
+    }
+
+    // Mark the installed plugin as an ESM package: without it, hosts loading
+    // the entrypoints through node/tsx treat them as CommonJS, where the
+    // entrypoints' module.exports guards hide their named exports.
+    await writeFile(path.join(stagingDir, "package.json"), `${JSON.stringify({ type: "module" })}\n`)
+
     await mkdir(pluginRoot, { recursive: true })
     await rm(targetDir, { recursive: true, force: true })
     await rename(stagingDir, targetDir)
 
-    for (const file of SAIA_PLUGIN_ROOT_FILES) {
-      await copyRuntimeFile(sourceDir, pluginRoot, file)
+    // Remove the loose pre-0.5.0 entrypoints so OpenCode 2.x does not load the
+    // plugin twice, and drop their tui.json/cli.json registration.
+    for (const file of SAIA_LEGACY_ENTRY_FILES) {
+      await unlink(path.join(pluginRoot, file)).catch(() => {})
     }
-
-    const tui = await installTuiPlugin(configDir)
+    const tui = await removeTuiPluginRegistration(configDir)
     return { configDir, pluginRoot, targetDir, tui }
   } catch (error) {
     await rm(stagingDir, { recursive: true, force: true })

@@ -1,69 +1,51 @@
-import { access, mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises"
-import { constants as fsConstants } from "node:fs"
+import { mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 
+// Registration path used by plugin versions up to 0.4.x. OpenCode 2.x discovers
+// the TUI entry (plugins/saia/tui.tsx) from the plugin package itself, so the
+// installer now removes these entries instead of writing them.
 export const TUI_PLUGIN_PATH = "./plugins/saia-limits-tui.tsx"
 
 // OpenCode 1.x reads the TUI plugin list from tui.json ("plugin" array).
-// OpenCode 2.x reads cli.json ("plugins" array). Both are maintained so the
-// install works under either major version.
+// OpenCode 2.x reads cli.json ("plugins" array). Both are cleaned so an
+// upgrade from the loose-file layout leaves no stale registration behind.
 const TUI_CONFIGS = Object.freeze([
-  { file: "tui.json", key: "plugin", schema: "https://opencode.ai/tui.json" },
-  { file: "cli.json", key: "plugins", schema: undefined },
+  { file: "tui.json", key: "plugin" },
+  { file: "cli.json", key: "plugins" },
 ])
 
-async function fileExists(file) {
-  try {
-    await access(file, fsConstants.F_OK)
-    return true
-  } catch {
-    return false
-  }
-}
-
-async function upsertPluginEntry(configDir, { file, key, schema }) {
+async function upsertRemovedEntry(configDir, { file, key }) {
   const configPath = path.join(configDir, file)
-  let config = {}
-  const exists = await fileExists(configPath)
-
-  if (exists) {
-    try {
-      config = JSON.parse(await readFile(configPath, "utf8"))
-    } catch (error) {
-      throw new Error(`Cannot update invalid JSON in ${configPath}`, { cause: error })
-    }
+  let config
+  try {
+    config = JSON.parse(await readFile(configPath, "utf8"))
+  } catch {
+    return { changed: false, configPath, missing: true }
   }
 
-  if (!config || typeof config !== "object" || Array.isArray(config)) {
-    throw new Error(`Cannot update ${configPath}: expected a JSON object`)
-  }
-  if (config[key] !== undefined && !Array.isArray(config[key])) {
-    throw new Error(`Cannot update ${configPath}: expected "${key}" to be an array`)
-  }
+  if (!config || typeof config !== "object" || Array.isArray(config)) return { changed: false, configPath }
+  if (!Array.isArray(config[key])) return { changed: false, configPath }
 
-  const plugins = config[key] ?? []
-  const changed = !plugins.includes(TUI_PLUGIN_PATH)
-  if (changed) plugins.push(TUI_PLUGIN_PATH)
+  const plugins = config[key].filter((entry) => entry !== TUI_PLUGIN_PATH)
+  const changed = plugins.length !== config[key].length
+  if (!changed) return { changed: false, configPath }
 
-  config[key] = plugins
-  const schemaAdded = schema !== undefined && config.$schema === undefined
-  if (schemaAdded) config.$schema = schema
+  if (plugins.length === 0) delete config[key]
+  else config[key] = plugins
 
-  if (changed || schemaAdded || !exists) {
-    const temporaryPath = `${configPath}.${process.pid}.tmp`
-    await writeFile(temporaryPath, `${JSON.stringify(config, null, 2)}\n`)
-    await rename(temporaryPath, configPath)
-  }
+  const temporaryPath = `${configPath}.${process.pid}.tmp`
+  await writeFile(temporaryPath, `${JSON.stringify(config, null, 2)}\n`)
+  await rename(temporaryPath, configPath)
 
-  return { changed, configPath }
+  return { changed: true, configPath }
 }
 
-export async function installTuiPlugin(configDir = path.join(homedir(), ".config", "opencode")) {
+export async function removeTuiPluginRegistration(configDir = path.join(homedir(), ".config", "opencode")) {
   await mkdir(configDir, { recursive: true })
 
-  const results = await Promise.all(TUI_CONFIGS.map((entry) => upsertPluginEntry(configDir, entry)))
+  const results = await Promise.all(TUI_CONFIGS.map((entry) => upsertRemovedEntry(configDir, entry)))
 
   return {
     changed: results.some((result) => result.changed),
@@ -79,7 +61,7 @@ async function isMainModule() {
 }
 
 if (await isMainModule()) {
-  const { changed, configPath, cliChanged, cliConfigPath } = await installTuiPlugin(process.argv[2])
-  console.log(`${changed ? "Configured" : "Already configured"} ${configPath}`)
-  console.log(`${cliChanged ? "Configured" : "Already configured"} ${cliConfigPath}`)
+  const { changed, configPath, cliChanged, cliConfigPath } = await removeTuiPluginRegistration(process.argv[2])
+  console.log(`${changed ? "Cleaned" : "Already clean"} ${configPath}`)
+  console.log(`${cliChanged ? "Cleaned" : "Already clean"} ${cliConfigPath}`)
 }

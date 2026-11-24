@@ -62,6 +62,7 @@
     "@opentui/keymap": "0.4.5",
     "@opentui/solid": "0.4.5",
     "@types/node": "^20.0.0",
+    "solid-js": "^1.9.12",
     "tsx": "4.23.12",
     "typescript": "5.8.2"
   },

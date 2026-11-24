@@ -1,13 +1,13 @@
 import assert from "node:assert/strict"
 import { execFile as execFileCallback } from "node:child_process"
-import { access, copyFile, cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
+import { access, cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
 import { pathToFileURL } from "node:url"
 import test from "node:test"
 import { installRuntime } from "./install-runtime.mjs"
-import { SAIA_PLUGIN_ROOT_FILES, SAIA_RUNTIME_FILES } from "./runtime-manifest.mjs"
+import { SAIA_ENTRY_FILES, SAIA_RUNTIME_FILES } from "./runtime-manifest.mjs"
 
 const execFile = promisify(execFileCallback)
 const SOURCE_DIR = path.join(process.cwd(), "src")
@@ -50,14 +50,14 @@ test("installs the explicit runtime manifest without test files and preserves se
     for (const file of SAIA_RUNTIME_FILES) {
       assert.equal(await exists(path.join(targetDir, file)), true, `missing runtime file ${file}`)
     }
-    for (const file of SAIA_PLUGIN_ROOT_FILES) {
-      assert.equal(await exists(path.join(pluginRoot, file)), true, `missing entrypoint ${file}`)
+    for (const { destination } of SAIA_ENTRY_FILES) {
+      assert.equal(await exists(path.join(targetDir, destination)), true, `missing entrypoint ${destination}`)
     }
     assert.equal(await exists(path.join(targetDir, "provider", "ollama.sh")), true)
-    assert.deepEqual(JSON.parse(await readFile(path.join(configDir, "tui.json"), "utf8")).plugin, [
-      "./plugins/saia-limits-tui.tsx",
-    ])
+    assert.deepEqual(JSON.parse(await readFile(path.join(targetDir, "package.json"), "utf8")), { type: "module" })
     assert.equal((await filesBelow(targetDir)).some((file) => file.endsWith(".test.mjs")), false)
+    assert.equal(await exists(path.join(pluginRoot, "saia-plugin.ts")), false)
+    assert.equal(await exists(path.join(configDir, "tui.json")), false)
 
     const settingsPath = path.join(configDir, "saia.json")
     await writeFile(
@@ -69,6 +69,16 @@ test("installs the explicit runtime manifest without test files and preserves se
     )
     await writeFile(path.join(targetDir, "leftover.test.mjs"), "should be removed")
 
+    // Legacy loose layout: entrypoints at the plugin root plus their TUI
+    // registration must not survive a reinstall.
+    await writeFile(path.join(pluginRoot, "saia-plugin.ts"), "legacy")
+    await writeFile(path.join(pluginRoot, "saia-limits-tui.tsx"), "legacy")
+    await writeFile(path.join(configDir, "tui.json"), JSON.stringify({ plugin: ["./plugins/saia-limits-tui.tsx"] }))
+    await writeFile(
+      path.join(configDir, "cli.json"),
+      JSON.stringify({ animations: true, plugins: ["./plugins/saia-limits-tui.tsx"] }),
+    )
+
     await installRuntime(SOURCE_DIR, configDir)
 
     assert.deepEqual(JSON.parse(await readFile(settingsPath, "utf8")), {
@@ -76,6 +86,11 @@ test("installs the explicit runtime manifest without test files and preserves se
       apiKeyCommand: ["security", "find-generic-password", "-s", "saia", "-w"],
     })
     assert.equal(await exists(path.join(targetDir, "leftover.test.mjs")), false)
+    assert.equal(await exists(path.join(pluginRoot, "saia-plugin.ts")), false)
+    assert.equal(await exists(path.join(pluginRoot, "saia-limits-tui.tsx")), false)
+    assert.equal(JSON.parse(await readFile(path.join(configDir, "tui.json"), "utf8")).plugin, undefined)
+    assert.deepEqual(JSON.parse(await readFile(path.join(configDir, "cli.json"), "utf8")).plugins, undefined)
+    assert.equal(JSON.parse(await readFile(path.join(configDir, "cli.json"), "utf8")).animations, true)
   })
 })
 
@@ -93,7 +108,8 @@ test("the Bash installer works in a temporary home whose path contains spaces", 
     const configDir = path.join(home, ".config", "opencode")
     const targetDir = path.join(configDir, "plugins", "saia")
     assert.equal(await exists(path.join(targetDir, "saia.ts")), true)
-    assert.equal(await exists(path.join(configDir, "plugins", "saia-plugin.ts")), true)
+    assert.equal(await exists(path.join(targetDir, "index.ts")), true)
+    assert.equal(await exists(path.join(targetDir, "tui.tsx")), true)
     assert.equal(await exists(path.join(targetDir, "provider", "ollama.sh")), true)
     assert.deepEqual(JSON.parse(await readFile(path.join(configDir, "saia.json"), "utf8")), {
       transport: "responses",
@@ -130,9 +146,9 @@ test("the non-interactive wizard accepts a valid apiKeyCommand without an enviro
 test("the installed server and TUI entrypoints import through the installed layout", async () => {
   await withTemporaryHome(async (home) => {
     const configDir = path.join(home, ".config", "opencode")
-    const { pluginRoot } = await installRuntime(SOURCE_DIR, configDir)
-    const serverURL = pathToFileURL(path.join(pluginRoot, "saia-plugin.ts")).href
-    const tuiURL = pathToFileURL(path.join(pluginRoot, "saia-limits-tui.tsx")).href
+    const { targetDir } = await installRuntime(SOURCE_DIR, configDir)
+    const serverURL = pathToFileURL(path.join(targetDir, "index.ts")).href
+    const tuiURL = pathToFileURL(path.join(targetDir, "tui.tsx")).href
     const code = `
       import server from ${JSON.stringify(serverURL)}
       import tui, { displayLimits } from ${JSON.stringify(tuiURL)}
@@ -146,7 +162,7 @@ test("the installed server and TUI entrypoints import through the installed layo
         headers: typeof hooks["chat.headers"],
         slot: claim.append,
         render: typeof claim.render,
-        limits: displayLimits({ minute: 1 }),
+        limits: displayLimits({ tenSeconds: "9", hour: "199", day: "398" }),
       }))
     `
     const { stdout } = await execFile(process.execPath, ["--import", "tsx", "--input-type=module", "-e", code], {
@@ -160,26 +176,25 @@ test("the installed server and TUI entrypoints import through the installed layo
       headers: "function",
       slot: "prompt.footer",
       render: "function",
-      limits: "1/m",
+      limits: "9/10s · 199/h · 398/d",
     })
   })
 })
 
-test("the installed updater rolls back the runtime, entrypoints, and TUI registration together", async () => {
+test("the installed updater rolls back the runtime and entrypoints together", async () => {
   await withTemporaryHome(async (home) => {
     const configDir = path.join(home, "custom config", "opencode")
-    const { pluginRoot, targetDir } = await installRuntime(SOURCE_DIR, configDir)
+    const { targetDir } = await installRuntime(SOURCE_DIR, configDir)
     const backupDir = path.join(home, ".cache", "saia", "plugin-backups", "snapshot")
     await mkdir(backupDir, { recursive: true })
     await cp(targetDir, path.join(backupDir, "saia"), { recursive: true })
-    await copyFile(path.join(pluginRoot, "saia-plugin.ts"), path.join(backupDir, "saia-plugin.ts"))
-    await copyFile(path.join(pluginRoot, "saia-limits-tui.tsx"), path.join(backupDir, "saia-limits-tui.tsx"))
 
     const expectedRuntime = await readFile(path.join(targetDir, "saia.ts"), "utf8")
-    const expectedEntrypoint = await readFile(path.join(pluginRoot, "saia-plugin.ts"), "utf8")
+    const expectedServerEntry = await readFile(path.join(targetDir, "index.ts"), "utf8")
+    const expectedTuiEntry = await readFile(path.join(targetDir, "tui.tsx"), "utf8")
     await writeFile(path.join(targetDir, "saia.ts"), "changed runtime")
-    await writeFile(path.join(pluginRoot, "saia-plugin.ts"), "changed entrypoint")
-    await writeFile(path.join(configDir, "tui.json"), JSON.stringify({ plugin: [] }))
+    await writeFile(path.join(targetDir, "index.ts"), "changed entrypoint")
+    await writeFile(path.join(targetDir, "tui.tsx"), "changed entrypoint")
 
     await execFile("bash", [path.join(targetDir, "update-plugin.sh"), "--rollback"], {
       cwd: process.cwd(),
@@ -187,10 +202,8 @@ test("the installed updater rolls back the runtime, entrypoints, and TUI registr
     })
 
     assert.equal(await readFile(path.join(targetDir, "saia.ts"), "utf8"), expectedRuntime)
-    assert.equal(await readFile(path.join(pluginRoot, "saia-plugin.ts"), "utf8"), expectedEntrypoint)
-    assert.deepEqual(JSON.parse(await readFile(path.join(configDir, "tui.json"), "utf8")).plugin, [
-      "./plugins/saia-limits-tui.tsx",
-    ])
+    assert.equal(await readFile(path.join(targetDir, "index.ts"), "utf8"), expectedServerEntry)
+    assert.equal(await readFile(path.join(targetDir, "tui.tsx"), "utf8"), expectedTuiEntry)
   })
 })
 
@@ -242,11 +255,11 @@ test("OpenCode 1.18.16 loads automatic and explicit installed server plugin path
     const automaticConfig = JSON.parse(stdout.slice(configStart + 1))
     assert.equal(automaticConfig.model, "saia/smoke-model")
     assert.equal(automaticConfig.provider.saia.models["smoke-model"].name, "Smoke Model")
-    assert.ok(automaticConfig.plugin.some((entry) => entry.endsWith("/plugins/saia-plugin.ts")))
+    assert.ok(automaticConfig.plugin.some((entry) => entry.endsWith("/plugins/saia/index.ts")))
     assert.ok(automaticConfig.plugin_origins.some((entry) => entry.scope === "global"))
     assert.doesNotMatch(stderr, /plugin .* (error|failed)/i)
 
-    await rm(path.join(configDir, "plugins", "saia-plugin.ts"))
+    await rm(path.join(configDir, "plugins", "saia", "index.ts"))
     await writeFile(path.join(configDir, "opencode.json"), JSON.stringify({ plugin: ["./plugins/saia/saia.ts"] }))
     const explicit = await execFile("opencode", ["debug", "config"], { cwd: process.cwd(), env })
     const explicitConfigStart = explicit.stdout.indexOf("\n{")

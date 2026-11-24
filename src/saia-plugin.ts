@@ -1,20 +1,18 @@
-// Installed as ~/.config/opencode/plugins/saia-plugin.ts.
+// Installed as ~/.config/opencode/plugins/saia/index.ts, the server entrypoint
+// of the discovered saia plugin package.
 //
-// OpenCode discovers immediate files in the plugins directory, which is why the
-// installer places this small wrapper there. No "plugin" entry in opencode.json is
-// needed for that layout. Explicit plugin configuration can also use a relative local
-// path when a project needs to opt into a plugin deliberately.
-//
-// The implementation stays nested in saia/ so its helper modules are not themselves
-// picked up as plugins. The default export is the dual V1+V2 definition documented in
-// saia.ts: OpenCode 2.x reads id + setup, OpenCode >=1.18.29 calls server().
-import plugin from "./saia/saia.js"
+// The implementation sits alongside this file so its helper modules are not
+// themselves picked up as plugins. The default export is the dual V1+V2
+// definition documented in saia.ts: OpenCode 2.x reads id + setup,
+// OpenCode >=1.18.29 calls server().
+import plugin from "./saia.js"
 
 export default plugin
 
-// Files installed under ~/.config do not inherit this package's "type": "module".
-// Preserve the ESM default while also making tsx/CommonJS loaders expose the function
-// directly, as OpenCode plugin entrypoints expect.
+// The installed plugin package carries "type": "module", so ESM loading is the
+// norm. This guard only covers hosts that evaluate the file as CommonJS while
+// ignoring package.json: expose the function directly, as OpenCode plugin
+// entrypoints expect.
 if (typeof module !== "undefined") {
   module.exports = plugin
 }

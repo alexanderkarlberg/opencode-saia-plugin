@@ -21,29 +21,8 @@ print_info() { echo -e "${YELLOW}[INFO]${NC} $1"; }
 print_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
 print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
-# These immediate plugin files live alongside the nested runtime directory.
-backup_entry_points() {
-    local backup_path="$1"
-
-    for entry_point in saia-plugin.ts saia-limits-tui.tsx; do
-        if [[ -f "$PLUGIN_ROOT/$entry_point" ]]; then
-            cp "$PLUGIN_ROOT/$entry_point" "$backup_path/$entry_point"
-        fi
-    done
-}
-
-restore_entry_points() {
-    local backup_path="$1"
-
-    for entry_point in saia-plugin.ts saia-limits-tui.tsx; do
-        if [[ ! -f "$backup_path/$entry_point" ]]; then
-            print_error "Backup is missing $entry_point"
-            return 1
-        fi
-        cp "$backup_path/$entry_point" "$PLUGIN_ROOT/$entry_point"
-    done
-    node "$PLUGIN_DIR/install-tui-config.mjs" "$CONFIG_DIR"
-}
+# The server/TUI entrypoints (index.ts, tui.tsx) live inside the runtime
+# directory, so the directory backup below covers them.
 
 check_version() {
     local latest
@@ -69,7 +48,6 @@ do_update() {
     if [[ -d "$PLUGIN_DIR" ]]; then
         mkdir -p "$backup_path"
         cp -r "$PLUGIN_DIR" "$backup_path/saia"
-        backup_entry_points "$backup_path"
         print_success "Backup saved"
     fi
     print_info "Downloading latest from $REMOTE_URL"
@@ -111,7 +89,6 @@ do_rollback() {
     fi
     rm -rf "$PLUGIN_DIR"
     cp -r "$BACKUP_DIR/$latest_backup/saia" "$PLUGIN_DIR"
-    restore_entry_points "$BACKUP_DIR/$latest_backup"
     print_success "Rolled back to: $latest_backup"
 }
 

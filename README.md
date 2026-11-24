@@ -2,11 +2,13 @@
 
 OpenCode plugin that adds all [SAIA](https://chat-ai.academiccloud.de) (GWDG Chat AI) models to your OpenCode setup.
 
-> **OpenCode 2.x**: supported since plugin v0.4.0. The server plugin (`saia-plugin.ts`)
+> **OpenCode 2.x**: supported since plugin v0.4.0. The server plugin (`saia-plugin.ts`,
+> installed as `plugins/saia/index.ts`)
 > exports the dual V1+V2 definition — OpenCode 2.x reads `id` + `setup(ctx)`,
-> OpenCode ≥1.18.29 calls `server()`. The TUI quota widget registers the
+> OpenCode ≥1.18.29 calls `server()`. The TUI quota widget claims the
 > `prompt.footer` slot (OpenCode 2.x) or `session_prompt_right` (1.x) and is
-> registered in both `cli.json` (`plugins`, v2) and `tui.json` (`plugin`, v1).
+> discovered from the installed plugin package (`plugins/saia/tui.tsx`), so no
+> `cli.json`/`tui.json` registration is needed.
 
 **Repositories:** 
 - **Primary (active development):** [GitHub](https://github.com/tobias-weiss-ai-xr/opencode-saia-plugin)
@@ -28,7 +30,7 @@ SAIA model to the model picker:
    attachment and tool options are derived from the API response itself, so a
    changed SAIA line-up needs no plugin update.
 3. Adds a TUI quota widget that shows live rate-limit remaining in the
-   `session_prompt_right` slot.
+   `prompt.footer` slot.
 
 The bundled shell scripts (`src/generate-saia-config.sh`,
 `src/copy-saia-config.sh`) remain for the standalone/manual path that writes a
@@ -72,9 +74,8 @@ bash install.sh
 ```
 
 `install.sh` copies the runtime into `~/.config/opencode/plugins/saia/`,
-installs the OpenCode entry point at
-`~/.config/opencode/plugins/saia-plugin.ts`, and registers the TUI quota widget
-in `tui.json`. Pass
+including the OpenCode entry points `index.ts` (server) and `tui.tsx` (TUI
+quota widget), which OpenCode 2.x discovers as a plugin package. Pass
 `--transport responses` to use the Responses API instead of the default Chat
 Completions transport. Set `OPENCODE_CONFIG_DIR` first to install somewhere other
 than `~/.config/opencode`.
@@ -92,14 +93,17 @@ the key with
 
 ### Manual install
 
-OpenCode only auto-discovers `plugins/*.{ts,js}` (non-recursively), so the entry
-point must live directly under `plugins/`. To mirror what `install.sh` does:
+OpenCode 2.x discovers plugins as package directories:
+`plugins/<name>/index.ts` is the server entry, `plugins/<name>/tui.tsx` the
+TUI entry. To mirror what `install.sh` does:
 
 ```bash
 DEST=~/.config/opencode/plugins
 mkdir -p "$DEST"
 cp -r src "$DEST/saia"
-cp src/saia-plugin.ts src/saia-limits-tui.tsx "$DEST/"
+cp src/saia-plugin.ts "$DEST/saia/index.ts"
+cp src/saia-limits-tui.tsx "$DEST/saia/tui.tsx"
+echo '{"type":"module"}' > "$DEST/saia/package.json"
 ```
 
 ### Quick Install (One-liner)
@@ -288,13 +292,13 @@ Metrics to track: `time_total` (latency), `usage.prompt_tokens`, `usage.completi
 
 | Problem | Diagnosis | Fix |
 |---|---|---|
-| No `saia/*` models appear | Plugin not discovered | Check `~/.config/opencode/plugins/saia-plugin.ts` exists and `echo $SAIA_API_KEY` |
+| No `saia/*` models appear | Plugin not discovered | Check `~/.config/opencode/plugins/saia/index.ts` exists and `echo $SAIA_API_KEY` |
 | "NO API KEY SET" warning | Key not visible to OpenCode | Export `SAIA_API_KEY` or set `apiKeyCommand` in `~/.config/opencode/saia.json` |
 | Plugin fails with API error | Invalid key or network issue | Verify the key at [SAIA dashboard](https://chat-ai.academiccloud.de), check firewall |
 | `curl: command not found` | Missing `curl` | Install: Linux `sudo apt install curl` or macOS `brew install curl` |
 | `jq: command not found` | Missing `jq` | Install: Linux `sudo apt install jq` or macOS `brew install jq` |
 | 429 errors | Rate limit exhausted | Wait or check dashboard quota |
-| Quota widget missing | TUI plugin not registered | Re-run `bash install.sh` — it registers `saia-limits-tui.tsx` in `cli.json`/`tui.json` |
+| Quota widget missing | TUI plugin not discovered | Re-run `bash install.sh` — it installs `plugins/saia/tui.tsx`, which OpenCode 2.x discovers (requires OpenCode 2.x) |
 
 ## Environment Variables
 
@@ -358,11 +362,11 @@ If validation fails, the script will show detailed error messages to help you fi
 | `install.sh` / `install.ps1` | One-command installers (Linux/macOS, Windows) |
 | `src/install-runtime.mjs` | Copies the runtime + entry point into `~/.config/opencode/plugins/` |
 | `src/runtime-manifest.mjs` | Single source of truth for the installed file set |
-| `src/install-tui-config.mjs` | Registers the TUI widget in `tui.json` |
-| `src/saia-plugin.ts` | OpenCode discovery entry point (re-exports the plugin) |
+| `src/install-tui-config.mjs` | Removes the legacy `tui.json`/`cli.json` TUI registration on upgrade |
+| `src/saia-plugin.ts` | Server entry source (installed as `plugins/saia/index.ts`) |
 | `src/saia.ts` | Plugin: model loader, provider registration, config hook |
 | `src/saia-limits-server.js` | Captures `x-ratelimit-remaining-*` headers |
-| `src/saia-limits-tui.tsx` | TUI quota widget (`session_prompt_right` slot) |
+| `src/saia-limits-tui.tsx` | TUI quota widget (`prompt.footer` slot, installed as `plugins/saia/tui.tsx`) |
 | `src/saia-memory.ts` | L0/L1 cache, usage tracking, metrics, preferences |
 | `src/saia-api-key.mjs` | API-key resolution (env var / `apiKeyCommand` / settings) |
 | `src/saia-transport.mjs`, `src/set-saia-transport.mjs` | Transport selection (chat-completions / responses) |
