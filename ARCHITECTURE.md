@@ -90,7 +90,9 @@ hooks), OpenCode ≥1.18.29 calls `server()` (V1 `config`/`chat.headers`/
 5. **Requests proxied** to the SAIA API using the selected transport
 6. **Rate-limit headers captured** (`x-ratelimit-remaining-*`) and rendered in
    the TUI footer widget, together with the selected model's live load (`demand` from `/v1/models`, cached 60 s in `~/.cache/saia/demand.json`)
-7. **Usage/metrics recorded** to `~/.cache/saia/`
+7. **Usage/metrics recorded** to `~/.cache/saia/`: every SAIA request is
+   appended to the `usage.jsonl` ledger (non-2xx included — those still
+   count against the request quota), and the footer shows today's count
 8. **Static `opencode.json`** (installed by `install.sh`) remains as the
    no-plugin fallback; `reconcile-opencode-models.sh` prunes stale ids from it
 9. **Inventory re-checked daily** in the background (`saia-model-watcher.ts`):
@@ -106,7 +108,7 @@ hooks), OpenCode ≥1.18.29 calls `server()` (V1 `config`/`chat.headers`/
 ├── models.json          # API response cache (24h TTL)
 ├── demand.json          # Live model load snapshot (60s TTL, polled by the TUI)
 ├── models-list.json     # Model ID list for change detection
-├── usage.jsonl          # Per-use tracking (local)
+├── usage.jsonl          # Request ledger: one line per SAIA request (saia-usage.mjs)
 ├── metrics.json         # Per-model performance metrics
 ├── last-fetch.json      # Timestamp of last successful fetch
 └── plugin-backups/      # Plugin update backups

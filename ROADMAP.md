@@ -14,7 +14,7 @@ original roadmap is therefore already implemented.
 | Native OpenCode plugin (V1) | `src/saia.ts`, `src/saia-plugin.ts` |
 | Live model discovery with 24 h disk cache | `src/saia.ts`, `src/saia-memory.ts` |
 | Provider registration / config decoration | `src/saia.ts`, `src/saia-model-metadata.js` |
-| L0/L1 caching, usage tracking, metrics | `src/saia-memory.ts` |
+| L0/L1 caching, request ledger, metrics | `src/saia-memory.ts`, `src/saia-usage.mjs` |
 | Live rate-limit quota widget (TUI) | `src/saia-limits-server.js`, `src/saia-limits-tui.tsx` |
 | Model load ("demand") widget (TUI) | `src/saia-demand.ts`, `src/saia-limits-tui.tsx` |
 | Transport selection (chat-completions / responses) | `src/saia-transport.mjs`, `src/set-saia-transport.mjs` |

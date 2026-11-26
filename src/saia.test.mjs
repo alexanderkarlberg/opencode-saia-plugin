@@ -1,6 +1,17 @@
 import assert from "node:assert/strict"
 import test from "node:test"
+import { mkdtempSync } from "node:fs"
+import { tmpdir } from "node:os"
+import path from "node:path"
 import { createSaiaPlugin } from "./saia.ts"
+
+// Route the request ledger away from the real ~/.cache/saia file: the V1
+// config hook wraps fetch with the production logger. The override is read
+// per write, so setting it before the first test is enough.
+process.env.SAIA_USAGE_FILE = path.join(
+  mkdtempSync(path.join(tmpdir(), "saia-v1-test-usage-")),
+  "usage.jsonl",
+)
 
 const GENERATED_OPTIONS = {
   "enable-tools": true,

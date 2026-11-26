@@ -14,6 +14,7 @@ export const SAIA_RUNTIME_FILES = Object.freeze([
   "saia-settings.mjs",
   "saia-system-messages.js",
   "saia-transport.mjs",
+  "saia-usage.mjs",
   "saia-v2.mjs",
   "saia.ts",
   "set-saia-transport.mjs",

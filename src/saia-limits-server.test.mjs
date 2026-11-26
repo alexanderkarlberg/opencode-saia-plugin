@@ -15,7 +15,7 @@ const LITELLM_RATE_LIMIT_HEADERS = Object.fromEntries(
 
 // Builds an isolated client/config pair so each test observes only its own traffic.
 function setup(baseURL) {
-  const calls = { gets: [], patches: [] }
+  const calls = { gets: [], patches: [], usage: [] }
   const outgoing = {}
 
   const client = {
@@ -47,7 +47,10 @@ function setup(baseURL) {
     },
   }
 
-  return { calls, outgoing, client, config, hooks: createSaiaLimitsHooks(client) }
+  const hooks = createSaiaLimitsHooks(client, {
+    logSaiaRequest: (entry) => calls.usage.push(entry),
+  })
+  return { calls, outgoing, client, config, hooks }
 }
 
 test("tags outgoing SAIA requests with the session id", async () => {
@@ -393,6 +396,7 @@ import { createSaiaV2LimitsHooks } from "./saia-limits-server.js"
 function setupV2() {
   const sessions = new Map()
   const updates = []
+  const usage = []
   const domain = {
     async get({ sessionID }) {
       return { metadata: { ...sessions.get(sessionID) } }
@@ -402,7 +406,9 @@ function setupV2() {
       sessions.set(input.sessionID, input.metadata)
     },
   }
-  const hooks = createSaiaV2LimitsHooks(domain)
+  const hooks = createSaiaV2LimitsHooks(domain, {
+    logSaiaRequest: (entry) => usage.push(entry),
+  })
   const event = (response, sessionID = "ses_v2") => ({
     sessionID,
     model: { providerID: "saia", id: "glm-5.3-flash" },
@@ -410,7 +416,7 @@ function setupV2() {
   })
   const respond = (headers) => new Response("", { headers })
 
-  return { hooks, event, respond, updates }
+  return { hooks, event, respond, updates, usage }
 }
 
 test("v2: records quota headers and the current model from http.response", async () => {
@@ -482,4 +488,65 @@ test("v2: serializes concurrent metadata updates for one session", async () => {
   assert.equal(updates[1].metadata.saiaLimits.tenSeconds, "10")
   assert.equal(updates[3].metadata.saiaLimits.tenSeconds, "3")
   assert.equal(updates[3].metadata.saiaModel, "glm-5.3-flash")
+})
+
+test("ledgers provider requests with the session's model, including non-2xx", async () => {
+  const { calls, config, hooks } = setup()
+  config.provider.saia.options.fetch = async () => new Response("rate limited", { status: 429, headers: RATE_LIMIT_HEADERS })
+  await hooks.config(config)
+
+  await hooks["chat.headers"](
+    { sessionID: "ses_ledger", model: { providerID: "saia", modelID: "glm-5.3-flash" } },
+    { headers: {} },
+  )
+
+  await config.provider.saia.options.fetch("https://chat-ai.academiccloud.de/v1/responses", {
+    headers: { "x-opencode-saia-session": "ses_ledger" },
+  })
+  // A request whose session never announced a model still lands in the ledger.
+  await config.provider.saia.options.fetch("https://chat-ai.academiccloud.de/v1/responses", {
+    headers: { "x-opencode-saia-session": "ses_no_model" },
+  })
+
+  assert.equal(calls.usage.length, 2)
+  assert.deepEqual(
+    { ...calls.usage[0], latencyMs: typeof calls.usage[0].latencyMs },
+    {
+      modelId: "glm-5.3-flash",
+      sessionID: "ses_ledger",
+      status: 429,
+      latencyMs: "number",
+    },
+  )
+  assert.equal(calls.usage[1].modelId, null)
+  assert.equal(calls.usage[1].sessionID, "ses_no_model")
+})
+
+test("does not ledger requests to other hosts", async () => {
+  const { calls, config, hooks } = setup()
+  await hooks.config(config)
+
+  await config.provider.saia.options.fetch("https://example.test/v1/chat/completions", {
+    headers: { "x-opencode-saia-session": "ses_other_host" },
+  })
+
+  assert.equal(calls.usage.length, 0)
+})
+
+test("v2: ledgers every SAIA http.response", async () => {
+  const { hooks, event, respond, usage } = setupV2()
+
+  await hooks["http.response"](event(respond(RATE_LIMIT_HEADERS)))
+  await hooks["http.response"](
+    { ...event(respond({}), "ses_429"), response: new Response("", { status: 429 }) },
+  )
+
+  assert.deepEqual(usage[0], {
+    modelId: "glm-5.3-flash",
+    sessionID: "ses_v2",
+    status: 200,
+  })
+  // Non-2xx responses count against the quota too and must be ledgered.
+  assert.equal(usage[1].status, 429)
+  assert.equal(usage[1].sessionID, "ses_429")
 })

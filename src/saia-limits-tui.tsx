@@ -6,6 +6,7 @@ import type { Plugin } from "@opencode/plugin/tui"
 import type { TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
 import { type DemandEntry, createDemandTracker, demandLevel } from "./saia-demand.js"
 import { resolveSaiaApiKey } from "./saia-api-key.mjs"
+import { countUsageToday } from "./saia-usage.mjs"
 
 // The TUI polls the SAIA model list for live load more often than the 60s
 // demand cache TTL would imply, so the widget tracks the selected model's
@@ -136,12 +137,33 @@ function useModelLoad(getMetadata: () => Record<string, unknown> | undefined) {
   return entry
 }
 
-// One muted footer line: the colored load segment first, then the quota
-// counters, each colored by how much of its window is left. Kept in a
-// single row so all parts truncate together.
+// Footer label for today's request count; empty while no ledger exists.
+export function formatRequestCount(count: number | null) {
+  return count === null ? "" : `${count} reqs today`
+}
+
+// Counts today's ledgered SAIA requests (~/.cache/saia/usage.jsonl).
+function useRequestCount() {
+  const [count, setCount] = createSignal<number | null>(null)
+
+  const refresh = async () => setCount(await countUsageToday())
+
+  onMount(() => {
+    void refresh()
+    const interval = setInterval(() => void refresh(), DEMAND_POLL_MS)
+    onCleanup(() => clearInterval(interval))
+  })
+
+  return count
+}
+
+// One muted footer line: the colored load segment first, then today's
+// request count, then the quota counters, each colored by how much of its
+// window is left. Kept in a single row so all parts truncate together.
 function SaiaFooter(props: {
   muted: ColorInput
   load: () => DemandSegment | undefined
+  requests: () => number | null
   quotas: () => QuotaSegment[]
 }) {
   return (
@@ -151,6 +173,11 @@ function SaiaFooter(props: {
           {props.load()!.text}
         </text>
       ) : undefined}
+      {props.requests() !== null ? (
+        <text height={1} wrapMode="none" truncate fg={props.muted}>
+          {(props.load() ? " · " : "") + formatRequestCount(props.requests())}
+        </text>
+      ) : undefined}
       {props.quotas().map((quota, index) => (
         <text
           height={1}
@@ -158,7 +185,7 @@ function SaiaFooter(props: {
           truncate
           fg={quota.color ?? props.muted}
         >
-          {(props.load() || index > 0 ? " · " : "") + quota.text}
+          {(props.load() || props.requests() !== null || index > 0 ? " · " : "") + quota.text}
         </text>
       ))}
     </box>
@@ -169,11 +196,13 @@ function SaiaLimits(props: { ctx: Plugin.Context; sessionID?: string }) {
   const metadata = () =>
     props.sessionID ? props.ctx.data.session.get(props.sessionID)?.metadata : undefined
   const entry = useModelLoad(metadata)
+  const requests = useRequestCount()
 
   return (
     <SaiaFooter
       muted={props.ctx.theme.text.muted}
       load={() => demandSegment(entry())}
+      requests={requests}
       quotas={() => quotaSegments(metadata()?.saiaLimits)}
     />
   )
@@ -182,11 +211,13 @@ function SaiaLimits(props: { ctx: Plugin.Context; sessionID?: string }) {
 function V1SaiaLimits(props: { api: TuiPluginApi; session_id?: string }) {
   const metadata = () => props.api.state.session.get(props.session_id)?.metadata
   const entry = useModelLoad(metadata)
+  const requests = useRequestCount()
 
   return (
     <SaiaFooter
       muted={props.api.theme.current.textMuted}
       load={() => demandSegment(entry())}
+      requests={requests}
       quotas={() => quotaSegments(metadata()?.saiaLimits)}
     />
   )
@@ -231,6 +262,7 @@ if (typeof module !== "undefined") {
   module.exports.displayLimits = displayLimits
   module.exports.displaySessionStatus = displaySessionStatus
   module.exports.demandSegment = demandSegment
+  module.exports.formatRequestCount = formatRequestCount
   module.exports.quotaColor = quotaColor
   module.exports.quotaSegments = quotaSegments
 }

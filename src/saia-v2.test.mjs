@@ -1,6 +1,17 @@
 import assert from "node:assert/strict"
 import test from "node:test"
+import { mkdtempSync } from "node:fs"
+import { tmpdir } from "node:os"
+import path from "node:path"
 import { createSaiaV2Setup } from "./saia.ts"
+
+// Route the request ledger away from the real ~/.cache/saia file: the V2
+// setup registers the production http.response logger. The override is read
+// per write, so setting it before the first test is enough.
+process.env.SAIA_USAGE_FILE = path.join(
+  mkdtempSync(path.join(tmpdir(), "saia-v2-test-usage-")),
+  "usage.jsonl",
+)
 import {
   DEFAULT_SAIA_MODEL,
   decorateSaiaV2Provider,

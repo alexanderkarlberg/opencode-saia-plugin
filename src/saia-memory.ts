@@ -6,6 +6,7 @@ import os from "node:os"
 
 const CACHE_DIR = path.join(os.homedir(), ".cache", "saia")
 const CACHE_FILE = path.join(CACHE_DIR, "models.json")
+// Written by the request ledger in saia-usage.mjs; kept for getCacheStats.
 const USAGE_FILE = path.join(CACHE_DIR, "usage.jsonl")
 const METRICS_FILE = path.join(CACHE_DIR, "metrics.json")
 const PREFERENCES_FILE = path.join(os.homedir(), ".config", "opencode", "saia-preferences.json")
@@ -136,24 +137,8 @@ export async function clearCache(): Promise<void> {
   }
 }
 
-/** Log model usage per project */
-export async function logUsage(modelId: string, taskType?: string, latencyMs?: number): Promise<void> {
-  await ensureCacheDir()
-
-  try {
-    const fs = await import("node:fs/promises")
-    const entry = {
-      timestamp: new Date().toISOString(),
-      projectRoot: process.cwd(),
-      modelId,
-      taskType: inferTaskType(taskType),
-      latencyMs,
-    }
-    await fs.appendFile(USAGE_FILE, JSON.stringify(entry) + "\n")
-  } catch (err) {
-    console.error(`[SAIA Memory] Failed to log usage: ${err}`)
-  }
-}
+/** Log model usage per project — superseded by the request ledger in
+ * saia-usage.mjs (logSaiaRequest), which the limits hooks maintain. */
 
 /** Update metrics for a model */
 export async function updateMetrics(modelId: string, success: boolean, latencyMs?: number): Promise<void> {
@@ -237,21 +222,6 @@ export async function updateContext(updates: Record<string, unknown>): Promise<v
   } catch (err) {
     console.error(`[SAIA Memory] Failed to update project context: ${err}`)
   }
-}
-
-/** Infer task type from file structure */
-function inferTaskType(explicit?: string): string {
-  if (explicit) return explicit
-
-  const cwd = process.cwd()
-  const mainFile = path.join(cwd, "src")
-
-  // Simple heuristics
-  if (mainFile.includes("test") || mainFile.includes("spec")) return "testing"
-  if (mainFile.endsWith(".md") || mainFile.endsWith(".txt")) return "documentation"
-  if (/\.(ts|js|py|java|cpp|go|rs)$/.test(mainFile)) return "coding"
-  if (/\.(png|jpg|jpeg|gif|svg)$/.test(mainFile)) return "vision"
-  return "general"
 }
 
 /** Get recommended model based on usage and context */

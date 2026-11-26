@@ -5,6 +5,7 @@ import tuiPlugin, {
   demandSegment,
   displayLimits,
   displaySessionStatus,
+  formatRequestCount,
   quotaColor,
   quotaSegments,
 } from "./saia-limits-tui.tsx"
@@ -127,8 +128,13 @@ test("quota segments are colored by the remaining ratio", () => {
   assert.deepEqual(quotaSegments(undefined), [])
 })
 
-test("quota color thresholds sit at 50 / 30 / 10 percent remaining", () => {
-  assert.equal(quotaColor(6, 10), "green", "60 % is green")
+test("request count renders only once a ledger exists", () => {
+  assert.equal(formatRequestCount(0), "0 reqs today")
+  assert.equal(formatRequestCount(37), "37 reqs today")
+  assert.equal(formatRequestCount(null), "")
+})
+
+test("quota color thresholds sit at 50 / 30 / 10 percent remaining", () => {  assert.equal(quotaColor(6, 10), "green", "60 % is green")
   assert.equal(quotaColor(5, 10), "yellow", "50 % exactly drops out of green")
   assert.equal(quotaColor(4, 10), "yellow", "40 % is yellow")
   assert.equal(quotaColor(31, 100), "yellow", "31 % is yellow")

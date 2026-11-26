@@ -29,8 +29,9 @@ SAIA model to the model picker:
 2. Registers the models through the V1 plugin API (`config` hook); name,
    attachment and tool options are derived from the API response itself, so a
    changed SAIA line-up needs no plugin update.
-3. Adds a TUI quota widget that shows live rate-limit remaining in the
-   `prompt.footer` slot.
+3. Adds a TUI footer widget: live model load (colored demand bars), today's
+   SAIA request count, and rate-limit remaining per window, colored by how
+   much is left.
 4. Re-checks the SAIA inventory once a day in the background (see
    `SAIA_MODEL_CHECK_INTERVAL_MS`); on OpenCode 2.x new and retired models
    are applied live, on 1.x they land on the next restart.

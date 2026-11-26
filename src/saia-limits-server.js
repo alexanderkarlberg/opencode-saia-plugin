@@ -1,3 +1,5 @@
+import { logSaiaRequest as defaultLogSaiaRequest } from "./saia-usage.mjs"
+
 const INTERNAL_SESSION_HEADER = "x-opencode-saia-session"
 const SAIA_ORIGIN = "https://chat-ai.academiccloud.de"
 const WRAPPED_FETCH = Symbol.for("opencode-saia-plugin.limits-fetch")
@@ -145,12 +147,15 @@ function modelIDOf(model) {
   return typeof id === "string" && id ? id : undefined
 }
 
-export function createSaiaLimitsHooks(client, { onWarning = console.warn } = {}) {
+export function createSaiaLimitsHooks(client, { onWarning = console.warn, logSaiaRequest = defaultLogSaiaRequest } = {}) {
   const { enqueueMetadataSave, flush } = createMetadataSaver(client, { onWarning })
   const enqueueLimitsSave = (sessionID, limits) =>
     enqueueMetadataSave(sessionID, { saiaLimits: limits }, "rate limits")
   const enqueueModelSave = (sessionID, modelID) =>
     enqueueMetadataSave(sessionID, { saiaModel: modelID }, "session model")
+  // The wrapped provider fetch has no model of its own; chat.headers pairs
+  // each session with the model OpenCode is about to use for it.
+  const sessionModels = new Map()
 
   return {
     config(config) {
@@ -176,8 +181,18 @@ export function createSaiaLimitsHooks(client, { onWarning = console.warn } = {})
 
         // This header only carries OpenCode routing state and must not leave the client.
         headers.delete(INTERNAL_SESSION_HEADER)
+        const startedAt = Date.now()
         const response = await originalFetch.call(this, input, { ...init, headers })
         const limits = limitsFrom(response)
+
+        // Ledger every SAIA request — non-2xx included, those still count
+        // against the request quota.
+        void logSaiaRequest({
+          modelId: sessionModels.get(sessionID) ?? null,
+          sessionID,
+          status: response.status,
+          latencyMs: Date.now() - startedAt,
+        })
 
         if (limits) {
           enqueueLimitsSave(sessionID, limits)
@@ -196,7 +211,10 @@ export function createSaiaLimitsHooks(client, { onWarning = console.warn } = {})
       // Remember which SAIA model this session uses so the TUI load widget
       // knows which entry of the /v1/models demand index to display.
       const modelID = modelIDOf(input.model)
-      if (modelID) enqueueModelSave(input.sessionID, modelID)
+      if (modelID) {
+        sessionModels.set(input.sessionID, modelID)
+        enqueueModelSave(input.sessionID, modelID)
+      }
     },
 
     flush,
@@ -205,7 +223,7 @@ export function createSaiaLimitsHooks(client, { onWarning = console.warn } = {})
 
 // OpenCode 2.x: quota headers are read off the native response in the
 // "http.response" session hook; no fetch wrapping needed.
-export function createSaiaV2LimitsHooks(sessionDomain, { onWarning = console.warn } = {}) {
+export function createSaiaV2LimitsHooks(sessionDomain, { onWarning = console.warn, logSaiaRequest = defaultLogSaiaRequest } = {}) {
   const { enqueueMetadataSave, flush } = createMetadataSaver(sessionDomain, { onWarning })
   const enqueueLimitsSave = (sessionID, limits) =>
     enqueueMetadataSave(sessionID, { saiaLimits: limits }, "rate limits")
@@ -216,7 +234,16 @@ export function createSaiaV2LimitsHooks(sessionDomain, { onWarning = console.war
     async "http.response"(event) {
       if (event?.model?.providerID !== "saia") return
       const modelID = modelIDOf(event.model)
-      if (modelID) enqueueModelSave(event.sessionID, modelID)
+      if (modelID) {
+        enqueueModelSave(event.sessionID, modelID)
+        // Ledger every SAIA response — non-2xx included, those still count
+        // against the request quota.
+        void logSaiaRequest({
+          modelId: modelID,
+          sessionID: event.sessionID,
+          status: event.response?.status,
+        })
+      }
       const limits = limitsFrom(event.response)
       if (limits) enqueueLimitsSave(event.sessionID, limits)
     },
