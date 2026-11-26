@@ -147,12 +147,49 @@ function modelIDOf(model) {
   return typeof id === "string" && id ? id : undefined
 }
 
-export function createSaiaLimitsHooks(client, { onWarning = console.warn, logSaiaRequest = defaultLogSaiaRequest } = {}) {
+// Resolves a session's working directory so ledger entries are attributed
+// to the project the request belongs to, not the server process cwd. The
+// lookup runs once per session; test setups inject a synchronous resolver.
+function createSessionDirectoryResolver(target) {
+  const cache = new Map()
+
+  return function resolveDirectory(sessionID) {
+    if (cache.has(sessionID)) return cache.get(sessionID)
+
+    const pending = (async () => {
+      try {
+        let info
+        if (typeof target?.get === "function" && typeof target?.update === "function") {
+          info = await target.get({ sessionID })
+        } else {
+          info = unwrap(
+            await target?._client?.get?.({
+              url: "/session/{sessionID}",
+              path: { sessionID },
+            }),
+          )
+        }
+        return typeof info?.directory === "string" && info.directory ? info.directory : process.cwd()
+      } catch {
+        return process.cwd()
+      }
+    })()
+
+    cache.set(sessionID, pending)
+    return pending
+  }
+}
+
+export function createSaiaLimitsHooks(
+  client,
+  { onWarning = console.warn, logSaiaRequest = defaultLogSaiaRequest, resolveDirectory } = {},
+) {
   const { enqueueMetadataSave, flush } = createMetadataSaver(client, { onWarning })
   const enqueueLimitsSave = (sessionID, limits) =>
     enqueueMetadataSave(sessionID, { saiaLimits: limits }, "rate limits")
   const enqueueModelSave = (sessionID, modelID) =>
     enqueueMetadataSave(sessionID, { saiaModel: modelID }, "session model")
+  const directoryFor = resolveDirectory ?? createSessionDirectoryResolver(client)
   // The wrapped provider fetch has no model of its own; chat.headers pairs
   // each session with the model OpenCode is about to use for it.
   const sessionModels = new Map()
@@ -181,18 +218,24 @@ export function createSaiaLimitsHooks(client, { onWarning = console.warn, logSai
 
         // This header only carries OpenCode routing state and must not leave the client.
         headers.delete(INTERNAL_SESSION_HEADER)
+        // Start the directory lookup before the request so it overlaps
+        // with the provider call instead of delaying it.
+        const directory = directoryFor(sessionID)
         const startedAt = Date.now()
         const response = await originalFetch.call(this, input, { ...init, headers })
         const limits = limitsFrom(response)
 
         // Ledger every SAIA request — non-2xx included, those still count
         // against the request quota.
-        void logSaiaRequest({
-          modelId: sessionModels.get(sessionID) ?? null,
-          sessionID,
-          status: response.status,
-          latencyMs: Date.now() - startedAt,
-        })
+        void Promise.resolve(directory).then((projectRoot) =>
+          logSaiaRequest({
+            modelId: sessionModels.get(sessionID) ?? null,
+            sessionID,
+            status: response.status,
+            latencyMs: Date.now() - startedAt,
+            projectRoot,
+          }),
+        )
 
         if (limits) {
           enqueueLimitsSave(sessionID, limits)
@@ -223,12 +266,16 @@ export function createSaiaLimitsHooks(client, { onWarning = console.warn, logSai
 
 // OpenCode 2.x: quota headers are read off the native response in the
 // "http.response" session hook; no fetch wrapping needed.
-export function createSaiaV2LimitsHooks(sessionDomain, { onWarning = console.warn, logSaiaRequest = defaultLogSaiaRequest } = {}) {
+export function createSaiaV2LimitsHooks(
+  sessionDomain,
+  { onWarning = console.warn, logSaiaRequest = defaultLogSaiaRequest, resolveDirectory } = {},
+) {
   const { enqueueMetadataSave, flush } = createMetadataSaver(sessionDomain, { onWarning })
   const enqueueLimitsSave = (sessionID, limits) =>
     enqueueMetadataSave(sessionID, { saiaLimits: limits }, "rate limits")
   const enqueueModelSave = (sessionID, modelID) =>
     enqueueMetadataSave(sessionID, { saiaModel: modelID }, "session model")
+  const directoryFor = resolveDirectory ?? createSessionDirectoryResolver(sessionDomain)
 
   return {
     async "http.response"(event) {
@@ -237,11 +284,12 @@ export function createSaiaV2LimitsHooks(sessionDomain, { onWarning = console.war
       if (modelID) {
         enqueueModelSave(event.sessionID, modelID)
         // Ledger every SAIA response — non-2xx included, those still count
-        // against the request quota.
-        void logSaiaRequest({
+        // against the request quota. Attributed to the session's directory.
+        await logSaiaRequest({
           modelId: modelID,
           sessionID: event.sessionID,
           status: event.response?.status,
+          projectRoot: await directoryFor(event.sessionID),
         })
       }
       const limits = limitsFrom(event.response)

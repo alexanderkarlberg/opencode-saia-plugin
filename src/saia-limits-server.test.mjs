@@ -49,6 +49,7 @@ function setup(baseURL) {
 
   const hooks = createSaiaLimitsHooks(client, {
     logSaiaRequest: (entry) => calls.usage.push(entry),
+    resolveDirectory: (sessionID) => `/v1/project/${sessionID}`,
   })
   return { calls, outgoing, client, config, hooks }
 }
@@ -372,7 +373,11 @@ test("serializes concurrent metadata updates for one session", async () => {
     })
   }
 
-  const hooks = createSaiaLimitsHooks(client)
+  const hooks = createSaiaLimitsHooks(client, {
+    logSaiaRequest: (entry) => calls.usage.push(entry),
+    // Sync resolver: this test measures metadata-write serialization only.
+    resolveDirectory: () => "/test/project",
+  })
   await hooks.config(config)
   await Promise.all([
     config.provider.saia.options.fetch("https://chat-ai.academiccloud.de/v1/responses", {
@@ -408,6 +413,7 @@ function setupV2() {
   }
   const hooks = createSaiaV2LimitsHooks(domain, {
     logSaiaRequest: (entry) => usage.push(entry),
+    resolveDirectory: (sessionID) => `/v2/project/${sessionID}`,
   })
   const event = (response, sessionID = "ses_v2") => ({
     sessionID,
@@ -516,10 +522,12 @@ test("ledgers provider requests with the session's model, including non-2xx", as
       sessionID: "ses_ledger",
       status: 429,
       latencyMs: "number",
+      projectRoot: "/v1/project/ses_ledger",
     },
   )
   assert.equal(calls.usage[1].modelId, null)
   assert.equal(calls.usage[1].sessionID, "ses_no_model")
+  assert.equal(calls.usage[1].projectRoot, "/v1/project/ses_no_model", "ledger entries are attributed to the session's directory")
 })
 
 test("does not ledger requests to other hosts", async () => {
@@ -545,8 +553,55 @@ test("v2: ledgers every SAIA http.response", async () => {
     modelId: "glm-5.3-flash",
     sessionID: "ses_v2",
     status: 200,
+    projectRoot: "/v2/project/ses_v2",
   })
   // Non-2xx responses count against the quota too and must be ledgered.
   assert.equal(usage[1].status, 429)
   assert.equal(usage[1].sessionID, "ses_429")
+})
+
+test("default directory resolver attributes ledger entries to the session's project", async () => {
+  const calls = { gets: [], patches: [], usage: [] }
+  const client = {
+    _client: {
+      async get(input) {
+        calls.gets.push(input)
+        return { data: { metadata: {}, directory: "/real/project" } }
+      },
+      async patch(input) {
+        calls.patches.push(input)
+      },
+    },
+  }
+  const config = {
+    provider: {
+      saia: {
+        options: {
+          baseURL: "https://chat-ai.academiccloud.de/v1",
+          // No quota headers: keeps this test about the directory lookup only.
+          async fetch() {
+            return new Response("")
+          },
+        },
+      },
+    },
+  }
+
+  const hooks = createSaiaLimitsHooks(client, { logSaiaRequest: (entry) => calls.usage.push(entry) })
+  await hooks.config(config)
+
+  await config.provider.saia.options.fetch("https://chat-ai.academiccloud.de/v1/responses", {
+    headers: { "x-opencode-saia-session": "ses_dir" },
+  })
+  await config.provider.saia.options.fetch("https://chat-ai.academiccloud.de/v1/responses", {
+    headers: { "x-opencode-saia-session": "ses_dir" },
+  })
+  await hooks.flush()
+  await new Promise((resolve) => setTimeout(resolve, 5))
+
+  assert.equal(calls.usage.length, 2)
+  assert.equal(calls.usage[0].projectRoot, "/real/project")
+  assert.equal(calls.usage[1].projectRoot, "/real/project")
+  // The lookup runs once per session and is cached afterwards.
+  assert.equal(calls.gets.length, 1, "one cached directory lookup for two requests")
 })

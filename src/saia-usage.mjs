@@ -20,7 +20,7 @@ export function usageFileFromEnvironment(environment = process.env) {
 // Appends one ledger entry. Never throws: a failed bookkeeping write must
 // not affect the provider response it travels with.
 export async function logSaiaRequest(
-  { modelId, sessionID, status, latencyMs },
+  { modelId, sessionID, status, latencyMs, projectRoot },
   { usageFile } = {},
 ) {
   const target = usageFile ?? usageFileFromEnvironment()
@@ -31,7 +31,9 @@ export async function logSaiaRequest(
       target,
       `${JSON.stringify({
         timestamp: new Date().toISOString(),
-        projectRoot: process.cwd(),
+        // Prefer the session's directory (see saia-limits-server.js); the
+        // server process cwd is only the fallback.
+        projectRoot: projectRoot ?? process.cwd(),
         modelId: modelId ?? null,
         sessionID: sessionID ?? null,
         status: status ?? null,
