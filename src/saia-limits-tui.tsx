@@ -4,8 +4,8 @@ import { createSignal, onCleanup, onMount } from "solid-js"
 import type { ColorInput } from "@opentui/core"
 import type { Plugin } from "@opencode/plugin/tui"
 import type { TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
-import { type DemandEntry, createDemandTracker, demandLevel } from "./saia/saia-demand.js"
-import { resolveSaiaApiKey } from "./saia/saia-api-key.mjs"
+import { type DemandEntry, createDemandTracker, demandLevel } from "./saia-demand.js"
+import { resolveSaiaApiKey } from "./saia-api-key.mjs"
 
 // The TUI polls the SAIA model list for live load more often than the 60s
 // demand cache TTL would imply, so the widget tracks the selected model's

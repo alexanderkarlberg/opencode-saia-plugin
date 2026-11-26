@@ -20,9 +20,18 @@ export const SAIA_RUNTIME_FILES = Object.freeze([
   "provider/ollama.sh",
 ])
 
-// OpenCode discovers these immediate files under plugins/. They import the
-// implementation from the nested saia/ directory above.
-export const SAIA_PLUGIN_ROOT_FILES = Object.freeze([
+// OpenCode 2.x discovers plugins as package directories and reads the server
+// entry from index.ts and the TUI entry from tui.tsx. The sources below are
+// copied into plugins/saia/ under those names.
+export const SAIA_ENTRY_FILES = Object.freeze([
+  { source: "saia-plugin.ts", destination: "index.ts" },
+  { source: "saia-limits-tui.tsx", destination: "tui.tsx" },
+])
+
+// Loose entrypoints from the pre-0.5.0 layout. They must not survive an
+// upgrade: OpenCode 2.x would discover both them and the package entries and
+// load the server plugin twice.
+export const SAIA_LEGACY_ENTRY_FILES = Object.freeze([
   "saia-plugin.ts",
   "saia-limits-tui.tsx",
 ])

@@ -29,14 +29,14 @@ test("server plugin exports the dual V1+V2 definition", async () => {
 })
 
 test("formats quota labels and registers the TUI prompt footer slot", async () => {
-  const limits = { minute: "26", hour: "128", day: "530", month: "2500" }
+  const limits = { tenSeconds: "26", tenSecondsLimit: "10", hour: "128", hourLimit: "400", day: "530", dayLimit: "800" }
 
   // SAIA exposes 10s/hour/day windows only; minute/month are not reported.
   assert.equal(
-    displayLimits({ minute: "9", hour: "199", day: null, month: "2998" }),
-    "199/h",
+    displayLimits({ tenSeconds: "9", hour: "199", day: null }),
+    "9/10s · 199/h",
   )
-  assert.equal(displayLimits(limits), "128/h · 530/d")
+  assert.equal(displayLimits(limits), "26/10 10s · 128/400 h · 530/800 d")
   assert.equal(displayLimits({}), "")
 
   // The footer combines the model load label with the quota counters.

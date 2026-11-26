@@ -73,6 +73,6 @@ fi
 
 echo ""
 echo "✓ Plugin installed to $TARGET_DIR"
-echo "  OpenCode entry point: $PLUGIN_ROOT/saia-plugin.ts"
+echo "  OpenCode entry point: $TARGET_DIR/index.ts"
 echo "  API transport: ${TRANSPORT:-configured setting or chat-completions default}"
 echo "  Run 'opencode' in any project to use SAIA models"

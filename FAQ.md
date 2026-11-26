@@ -3,7 +3,7 @@
 ## General
 
 **Q: Which OpenCode versions are supported?**
-A: OpenCode ≥1.18.16 (plugin v0.4.x, developed against `@opencode-ai/plugin` 1.18.16). The plugin is a plain V1 plugin; the TUI quota widget registers in the `session_prompt_right` slot via `tui.json`.
+A: OpenCode ≥1.18.16 (plugin v0.4.x, developed against `@opencode-ai/plugin` 1.18.16). The server plugin is a plain V1 plugin; the TUI quota widget claims the `prompt.footer` slot on OpenCode 2.x via the discovered `plugins/saia/tui.tsx` entry.
 
 **Q: How do I switch models in OpenCode?**
 A: Use `/model saia/<model-name>` in OpenCode. For example: `/model saia/glm-5.3-flash`. You can also use aliases like `/model saia/best-for-coding`.
@@ -45,10 +45,10 @@ A: Yes. Run `bash src/analytics-report.sh --csv > usage-report.csv`.
 ## Troubleshooting
 
 **Q: The plugin doesn't expose any models**
-A: Check that `SAIA_API_KEY` is set and the entry point exists: `ls ~/.config/opencode/plugins/saia-plugin.ts ~/.config/opencode/plugins/saia/`.
+A: Check that `SAIA_API_KEY` is set and the entry point exists: `ls ~/.config/opencode/plugins/saia/index.ts ~/.config/opencode/plugins/saia/`.
 
 **Q: I get "Failed to fetch models from SAIA API"**
 A: Verify your API key at https://chat-ai.academiccloud.de. Check network connectivity. If using a proxy, set `LITELLM_PROXY_URL`.
 
 **Q: Models don't show up in OpenCode**
-A: OpenCode auto-discovers `plugins/*.ts`, so no `"plugin"` entry is required. Confirm `~/.config/opencode/plugins/saia-plugin.ts` exists, then restart OpenCode. Run `opencode plugin list` to confirm the `saia` plugin loaded.
+A: OpenCode 2.x discovers the plugin package at `plugins/saia/` (`index.ts` server entry, `tui.tsx` TUI entry), so no `"plugin"` entry is required. Confirm `~/.config/opencode/plugins/saia/index.ts` exists, then restart OpenCode. Run `opencode plugin list` to confirm the `saia` plugin loaded.
