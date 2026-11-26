@@ -18,6 +18,13 @@ import {
 } from "./saia-config.mjs"
 import { resolveSaiaApiKey } from "./saia-api-key.mjs"
 import { createSaiaLimitsHooks, createSaiaV2LimitsHooks } from "./saia-limits-server.js"
+import {
+  type ModelDiff,
+  type ModelWatcherHandle,
+  type ModelWatcherOptions,
+  createModelWatcher,
+  modelCheckIntervalMs,
+} from "./saia-model-watcher.js"
 import { managedModelsFromSettings, readSaiaSettings, updateSaiaSettings } from "./saia-settings.mjs"
 import { resolveSaiaTransport } from "./saia-transport.mjs"
 import { normalizeSaiaQwenSystemMessages, normalizeSaiaQwenSystemParts } from "./saia-system-messages.js"
@@ -55,6 +62,8 @@ export interface SaiaPluginDependencies {
   getContext?: typeof memory.getContext
   getPreferences?: typeof memory.getPreferences
   updateMetrics?: typeof memory.updateMetrics
+  createModelWatcher?: (options: ModelWatcherOptions) => ModelWatcherHandle
+  modelCheckIntervalMs?: () => number
   onWarning?: (message: string) => void
 }
 
@@ -126,12 +135,13 @@ Get your key: https://chat-ai.academiccloud.de
     }
   }
 
-  const loadModels = () => {
-    if (!modelsPromise) {
+  const loadModels = ({ force = false }: { force?: boolean } = {}) => {
+    if (!modelsPromise || force) {
       modelsPromise = (async () => {
         const startedAt = Date.now()
         try {
           const result = await fetchWithCache(fetchModels, {
+            forceRefresh: force,
             isValid: isSaiaModelsResponse,
             onInvalidCache: onWarning,
           })
@@ -150,6 +160,32 @@ Get your key: https://chat-ai.academiccloud.de
   }
 
   return { loadModels, reportFailure }
+}
+
+function describeDiff(diff: ModelDiff) {
+  const parts: string[] = []
+  if (diff.added.length > 0) parts.push(`+${diff.added.join(", ")}`)
+  if (diff.removed.length > 0) parts.push(`-${diff.removed.join(", ")}`)
+  return parts.join(" ")
+}
+
+// Starts the background inventory re-check. The forced load inside `check`
+// also refreshes the 24 h disk cache, so even the V1 path (config applied
+// only at startup) picks changes up after a restart.
+function startModelInventoryWatcher(
+  dependencies: SaiaPluginDependencies,
+  loadModels: (options?: { force?: boolean }) => Promise<CachedModels>,
+  { knownIds, onChange }: { knownIds: string[]; onChange: (diff: ModelDiff) => Promise<void> | void },
+): ModelWatcherHandle {
+  const onWarning = dependencies.onWarning ?? console.warn
+
+  return (dependencies.createModelWatcher ?? createModelWatcher)({
+    knownIds,
+    check: async () => (await loadModels({ force: true })).data.data.map((model) => model.id),
+    onChange,
+    intervalMs: (dependencies.modelCheckIntervalMs ?? modelCheckIntervalMs)(),
+    onError: (error) => onWarning(`[SAIA] Model refresh check failed: ${errorMessage(error)}`),
+  })
 }
 
 export function createSaiaPlugin(dependencies: SaiaPluginDependencies = {}): Plugin {
@@ -197,11 +233,12 @@ export function createSaiaPlugin(dependencies: SaiaPluginDependencies = {}): Plu
     }
 
     const source = result.cached ? "cached" : "fresh"
-    return { count: modelIDs.length, source }
+    return { count: modelIDs.length, modelIDs, source }
   }
 
   return async ({ client }: PluginInput): Promise<Hooks> => {
     const limits = createSaiaLimitsHooks(client) as SaiaLimitsHooks
+    let watcher: ModelWatcherHandle | undefined
 
     return {
       async config(config) {
@@ -218,6 +255,23 @@ export function createSaiaPlugin(dependencies: SaiaPluginDependencies = {}): Plu
             })
           } catch {
             // Logging must not affect configuration or provider availability.
+          }
+
+          if (!watcher) {
+            watcher = startModelInventoryWatcher(dependencies, loadModels, {
+              knownIds: result.modelIDs,
+              // The V1 config hook runs once at startup; the watcher refreshes
+              // the cache and the next start picks the new inventory up.
+              onChange: async (diff) => {
+                const message = `model inventory changed (${describeDiff(diff)}) — restart OpenCode to use it`
+                console.log(`[SAIA] ${message}`)
+                try {
+                  await client.app.log({ body: { service: "saia", level: "info", message } })
+                } catch {
+                  // Logging must not affect the watcher.
+                }
+              },
+            })
           }
         }
         await limits.config(config)
@@ -266,61 +320,84 @@ export function createSaiaV2Setup(dependencies: SaiaPluginDependencies = {}) {
       return
     }
 
-    const settings = await readSettings({ onWarning })
-    const [context, preferences, transport] = await Promise.all([
-      getContext(),
-      getPreferences(),
-      resolveTransport({ onWarning }),
-    ])
-    const apiKey = (await resolveApiKey()) ?? undefined
+    // Applies a (possibly refreshed) inventory through the live provider and
+    // model transforms. Shared by the setup and the background watcher, so a
+    // model SAIA adds or retires mid-session appears without a restart.
+    let appliedViaTransport: string | undefined
+    const applyModels = async (models: CachedModels) => {
+      const settings = await readSettings({ onWarning })
+      const [context, preferences, transport] = await Promise.all([
+        getContext(),
+        getPreferences(),
+        resolveTransport({ onWarning }),
+      ])
+      appliedViaTransport = transport.id
+      const apiKey = (await resolveApiKey()) ?? undefined
 
-    let outcome: ReturnType<typeof decorateSaiaV2Provider> | undefined
-    await ctx.provider.transform((editor) => {
-      const record = editor.get(SAIA_PROVIDER_ID)
-      const existingModels = record ? [...record.models.values()] : []
-      outcome = decorateSaiaV2Provider({
-        models: result.data.data,
-        existingModels,
-        managedModels:
-          settings && typeof settings.v2ManagedModels === "object" && settings.v2ManagedModels !== null
-            ? (settings.v2ManagedModels as Record<string, unknown>)
-            : {},
-        preferredModel: preferredModelFrom(context, preferences),
+      let outcome: ReturnType<typeof decorateSaiaV2Provider> | undefined
+      await ctx.provider.transform((editor) => {
+        const record = editor.get(SAIA_PROVIDER_ID)
+        const existingModels = record ? [...record.models.values()] : []
+        outcome = decorateSaiaV2Provider({
+          models: models.data.data,
+          existingModels,
+          managedModels:
+            settings && typeof settings.v2ManagedModels === "object" && settings.v2ManagedModels !== null
+              ? (settings.v2ManagedModels as Record<string, unknown>)
+              : {},
+          preferredModel: preferredModelFrom(context, preferences),
+        })
+
+        if (record) {
+          editor.models.set(SAIA_PROVIDER_ID, outcome.models)
+          editor.update(SAIA_PROVIDER_ID, (provider) => {
+            const current = provider.settings?.["apiKey"]
+            if (apiKey && (!current || current === SAIA_API_KEY_PLACEHOLDER)) {
+              provider.settings = { ...provider.settings, apiKey }
+            }
+          })
+        } else {
+          editor.add({
+            info: saiaProviderInfo({ package: v2ProviderPackage(transport), apiKey }),
+            models: outcome.models,
+          })
+        }
+      })
+      if (!outcome) return
+
+      await ctx.model.transform((editor) => {
+        const current = editor.default.get()
+        if (shouldReplaceDefaultModel(current, outcome.modelIDs) && outcome.selected) {
+          editor.default.set(SAIA_PROVIDER_ID, outcome.selected)
+        }
       })
 
-      if (record) {
-        editor.models.set(SAIA_PROVIDER_ID, outcome.models)
-        editor.update(SAIA_PROVIDER_ID, (provider) => {
-          const current = provider.settings?.["apiKey"]
-          if (apiKey && (!current || current === SAIA_API_KEY_PLACEHOLDER)) {
-            provider.settings = { ...provider.settings, apiKey }
-          }
-        })
-      } else {
-        editor.add({
-          info: saiaProviderInfo({ package: v2ProviderPackage(transport), apiKey }),
-          models: outcome.models,
-        })
+      try {
+        const managed = outcome.managedModels
+        await updateSettings((current) => ({ ...current, v2ManagedModels: managed }))
+      } catch (error) {
+        onWarning(`[SAIA] Could not record managed model metadata: ${errorMessage(error)}`)
       }
-    })
-    if (!outcome) return
 
-    await ctx.model.transform((editor) => {
-      const current = editor.default.get()
-      if (shouldReplaceDefaultModel(current, outcome.modelIDs) && outcome.selected) {
-        editor.default.set(SAIA_PROVIDER_ID, outcome.selected)
-      }
-    })
-
-    try {
-      const managed = outcome.managedModels
-      await updateSettings((current) => ({ ...current, v2ManagedModels: managed }))
-    } catch (error) {
-      onWarning(`[SAIA] Could not record managed model metadata: ${errorMessage(error)}`)
+      return outcome
     }
 
+    const outcome = await applyModels(result)
+    if (!outcome) return
+
     const source = result.cached ? "cached" : "fresh"
-    console.log(`[SAIA] Configured ${outcome.modelIDs.length} models via ${transport.id} (${source})`)
+    console.log(`[SAIA] Configured ${outcome.modelIDs.length} models via ${appliedViaTransport} (${source})`)
+
+    const watcher = startModelInventoryWatcher(dependencies, loadModels, {
+      knownIds: outcome.modelIDs,
+      onChange: async (diff) => {
+        await applyModels(await loadModels())
+        console.log(`[SAIA] Applied model inventory changes (${describeDiff(diff)})`)
+      },
+    })
+
+    // Stop the background re-check when OpenCode tears the plugin down.
+    return () => watcher.stop()
   }
 }
 

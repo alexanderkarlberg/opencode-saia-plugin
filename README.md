@@ -31,6 +31,9 @@ SAIA model to the model picker:
    changed SAIA line-up needs no plugin update.
 3. Adds a TUI quota widget that shows live rate-limit remaining in the
    `prompt.footer` slot.
+4. Re-checks the SAIA inventory once a day in the background (see
+   `SAIA_MODEL_CHECK_INTERVAL_MS`); on OpenCode 2.x new and retired models
+   are applied live, on 1.x they land on the next restart.
 
 The bundled shell scripts (`src/generate-saia-config.sh`,
 `src/copy-saia-config.sh`) remain for the standalone/manual path that writes a
@@ -308,6 +311,7 @@ Metrics to track: `time_total` (latency), `usage.prompt_tokens`, `usage.completi
 | `LITELLM_PROXY_URL` | No | Optional LiteLLM proxy URL for caching/rate limiting |
 | `SAIA_CACHE_L0` | No | L0 in-memory cache: `true` (default) or `false` to disable |
 | `SAIA_CACHE_L1` | No | L1 disk cache: `true` (default) or `false` to disable |
+| `SAIA_MODEL_CHECK_INTERVAL_MS` | No | Background model-inventory re-check interval. Accepts milliseconds (`3600000`) or `30s` / `15m` / `12h`. Default `24h`; `0` disables the check |
 
 ## Relationship to the Original GWDG Plugin
 

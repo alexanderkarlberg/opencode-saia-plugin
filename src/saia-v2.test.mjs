@@ -330,3 +330,101 @@ test("v2 setup registers hooks even when the SAIA API fails", async () => {
   assert.equal(harness.calls.modelsSet, undefined)
   assert.ok(warnings.some((message) => message.includes("SAIA API returned 503")))
 })
+
+test("v2 setup applies watcher inventory changes live and stops on teardown", async () => {
+  const models = [{ id: "glm-5.3-flash", name: "GLM 5.3 Flash", input: ["text"], output: ["text"], status: "ready" }]
+  const captures = { created: 0 }
+  const watcherFactory = (options) => {
+    captures.created += 1
+    captures.options = options
+    return {
+      stop() {
+        captures.stopped = true
+      },
+    }
+  }
+
+  const sets = []
+  const saiaProvider = {
+    id: "saia",
+    settings: { apiKey: "{env:SAIA_API_KEY}" },
+  }
+  const editor = {
+    get: (id) =>
+      id === "saia"
+        ? { provider: saiaProvider, models: new Map() }
+        : undefined,
+    models: {
+      set: (providerID, applied) => sets.push(applied),
+    },
+    update: (providerID, update) => update(saiaProvider),
+    add: (input) => sets.push(input.models),
+  }
+  const ctx = {
+    provider: { transform: async (update) => update(editor) },
+    model: {
+      transform: async (update) =>
+        update({
+          default: {
+            get: () => undefined,
+            set() {},
+          },
+        }),
+    },
+    session: {
+      async hook() {},
+    },
+  }
+
+  const setup = createSaiaV2Setup({
+    async fetch() {
+      return new Response(JSON.stringify({ data: models }), { status: 200 })
+    },
+    async resolveApiKey() {
+      return "test-key"
+    },
+    async resolveTransport() {
+      return { id: "chat-completions", npm: "@ai-sdk/openai-compatible" }
+    },
+    async readSettings() {
+      return {}
+    },
+    async updateSettings() {
+      return {}
+    },
+    async fetchWithCache(fetcher) {
+      return { data: await fetcher(), cached: false }
+    },
+    async getContext() {
+      return {}
+    },
+    async getPreferences() {
+      return {}
+    },
+    async updateMetrics() {},
+    onWarning() {},
+    createModelWatcher: watcherFactory,
+  })
+
+  const cleanup = await setup(ctx)
+
+  assert.equal(typeof cleanup, "function", "setup must stop the watcher on teardown")
+  assert.equal(captures.created, 1)
+  assert.deepEqual(captures.options.knownIds, ["glm-5.3-flash"])
+  assert.equal(captures.options.intervalMs, 24 * 60 * 60 * 1000)
+  assert.deepEqual(sets[0].map((model) => model.id), ["glm-5.3-flash"])
+
+  // SAIA adds a model; the watcher's forced check sees it…
+  models.push({ id: "qwen9-99b", name: "Qwen 9 99B", input: ["text"], output: ["text"], status: "ready" })
+  assert.deepEqual(await captures.options.check(), ["glm-5.3-flash", "qwen9-99b"])
+
+  // …and applying the diff re-runs the provider transform without a restart.
+  await captures.options.onChange({ added: ["qwen9-99b"], removed: [] })
+  assert.deepEqual(
+    sets.at(-1).map((model) => model.id),
+    ["glm-5.3-flash", "qwen9-99b"],
+  )
+
+  cleanup()
+  assert.equal(captures.stopped, true)
+})

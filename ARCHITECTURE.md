@@ -93,6 +93,10 @@ hooks), OpenCode ≥1.18.29 calls `server()` (V1 `config`/`chat.headers`/
 7. **Usage/metrics recorded** to `~/.cache/saia/`
 8. **Static `opencode.json`** (installed by `install.sh`) remains as the
    no-plugin fallback; `reconcile-opencode-models.sh` prunes stale ids from it
+9. **Inventory re-checked daily** in the background (`saia-model-watcher.ts`):
+   OpenCode 2.x re-runs the provider/model transforms so new and retired
+   models appear mid-session; the 1.x `config` hook cannot re-run, so the
+   refreshed cache lands on the next restart
 
 
 ## Data Storage

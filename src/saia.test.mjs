@@ -32,6 +32,7 @@ function createHarness({
   apiKey = "test-key",
   transport = { id: "chat-completions", npm: "@ai-sdk/openai-compatible" },
   cached = false,
+  watcherFactory,
 } = {}) {
   const warnings = []
   const logs = []
@@ -71,6 +72,7 @@ function createHarness({
     async updateMetrics(name, success) {
       metrics.push({ name, success })
     },
+    ...(watcherFactory ? { createModelWatcher: watcherFactory } : {}),
     onWarning(message) {
       warnings.push(message)
     },
@@ -213,7 +215,7 @@ test("reports malformed model data once and leaves unrelated providers available
 
   assert.equal(harness.requestCount(), 2)
   assert.equal(harness.warnings.length, 1)
-  assert.match(harness.warnings[0], /Models were not refreshed/)
+  assert.match(harness.warnings[0], /models response must be an object/)
   assert.match(harness.warnings[0], /data array/)
   assert.equal(config.model, "openai/gpt-test")
   assert.deepEqual(config.provider, {
@@ -228,4 +230,56 @@ test("reports malformed model data once and leaves unrelated providers available
       ["refresh", false],
     ],
   )
+})
+
+test("starts a background model watcher once after a successful config", async () => {
+  const models = [{ id: "glm-4.7", name: "GLM-4.7", input: ["text"], output: ["text"], status: "ready" }]
+  const captures = { created: 0 }
+  const watcherFactory = (options) => {
+    captures.created += 1
+    captures.options = options
+    return { stop() {} }
+  }
+
+  const harness = createHarness({ models, watcherFactory })
+  const hooks = await harness.hooks
+  await hooks.config(harness.config)
+  await hooks.config(harness.config)
+
+  assert.equal(captures.created, 1, "repeated config runs must not stack watchers")
+  assert.deepEqual(captures.options.knownIds, ["glm-4.7"])
+  assert.equal(captures.options.intervalMs, 24 * 60 * 60 * 1000)
+
+  // The check forces a refresh: the API is hit again and the cache options
+  // carry forceRefresh so the disk cache is rewritten for the next start.
+  const before = harness.requestCount()
+  assert.deepEqual(await captures.options.check(), ["glm-4.7"])
+  assert.equal(harness.requestCount(), before + 1)
+  assert.equal(harness.cacheOptions().forceRefresh, true)
+
+  models.push({ id: "new-model", name: "New Model", input: ["text"], output: ["text"], status: "ready" })
+  assert.deepEqual(await captures.options.check(), ["glm-4.7", "new-model"])
+
+  await captures.options.onChange({ added: ["new-model"], removed: [] })
+  const messages = harness.logs.map((entry) => entry.body.message)
+  assert.ok(
+    messages.some((message) => message.includes("new-model") && message.includes("restart")),
+    `expected a restart hint in ${JSON.stringify(messages)}`,
+  )
+})
+
+test("does not start the watcher when no models could be loaded", async () => {
+  const captures = { created: 0 }
+  const harness = createHarness({
+    apiKey: "",
+    watcherFactory: (options) => {
+      captures.created += 1
+      return { stop() {} }
+    },
+  })
+  const hooks = await harness.hooks
+
+  await hooks.config(harness.config)
+
+  assert.equal(captures.created, 0)
 })

@@ -29,7 +29,7 @@ A: Yes. Set `SAIA_PROFILE=dev` or `SAIA_PROFILE=budget` before running `generate
 A: Yes, if you have Ollama running locally. Set `OLLAMA_BASE_URL=http://localhost:11434` and the plugin will fetch models from your local Ollama instance.
 
 **Q: How do I disable auto-refresh?**
-A: Auto-refresh is already disabled. The plugin caches model lists for 24 hours. To force a refresh, trigger the `saia-refresh` skill or delete `~/.cache/saia/models.json`.
+A: The plugin caches model lists for 24 hours and re-checks the SAIA inventory once a day in the background (set `SAIA_MODEL_CHECK_INTERVAL_MS=0` to turn that off). To force a refresh right away, trigger the `saia-refresh` skill or delete `~/.cache/saia/models.json`.
 
 ## Performance
 

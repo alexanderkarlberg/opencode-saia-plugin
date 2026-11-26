@@ -10,6 +10,7 @@ export const SAIA_RUNTIME_FILES = Object.freeze([
   "saia-limits-server.js",
   "saia-memory.ts",
   "saia-model-metadata.js",
+  "saia-model-watcher.ts",
   "saia-settings.mjs",
   "saia-system-messages.js",
   "saia-transport.mjs",
