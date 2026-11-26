@@ -60,12 +60,30 @@ test("tags outgoing SAIA requests with the session id", async () => {
 })
 
 test("leaves non-SAIA providers untagged", async () => {
-  const { hooks } = setup()
+  const { calls, hooks } = setup()
   const headers = {}
 
-  await hooks["chat.headers"]({ sessionID: "ses_test", model: { providerID: "anthropic" } }, { headers })
+  await hooks["chat.headers"]({ sessionID: "ses_test", model: { providerID: "anthropic", modelID: "claude" } }, { headers })
+  await hooks.flush()
 
   assert.deepEqual(headers, {})
+  assert.equal(calls.patches.length, 0, "non-SAIA models must not be recorded")
+})
+
+test("records the current SAIA model as session metadata", async () => {
+  const { calls, hooks } = setup()
+  const headers = {}
+
+  await hooks["chat.headers"](
+    { sessionID: "ses_model", model: { providerID: "saia", modelID: "glm-5.3-flash" } },
+    { headers },
+  )
+  await hooks.flush()
+
+  assert.equal(headers["x-opencode-saia-session"], "ses_model")
+  assert.equal(calls.patches.length, 1)
+  assert.equal(calls.patches[0].body.metadata.saiaModel, "glm-5.3-flash")
+  assert.equal(calls.patches[0].body.metadata.preserved, "value")
 })
 
 test("records rate limits and strips the internal header before the request leaves", async () => {
@@ -395,15 +413,18 @@ function setupV2() {
   return { hooks, event, respond, updates }
 }
 
-test("v2: records quota headers from http.response as session metadata", async () => {
+test("v2: records quota headers and the current model from http.response", async () => {
   const { hooks, event, respond, updates } = setupV2()
 
   await hooks["http.response"](event(respond(RATE_LIMIT_HEADERS)))
   await hooks.flush()
 
-  assert.equal(updates.length, 1)
+  assert.equal(updates.length, 2)
   assert.equal(updates[0].sessionID, "ses_v2")
-  assert.equal(updates[0].metadata.saiaLimits.tenSeconds, "9")
+  assert.equal(updates[0].metadata.saiaModel, "glm-5.3-flash")
+  assert.equal(updates[1].metadata.saiaLimits.tenSeconds, "9")
+  // The limits write observed the model write and kept it.
+  assert.equal(updates[1].metadata.saiaModel, "glm-5.3-flash")
 })
 
 test("v2: merges into existing metadata and keeps sessions separate", async () => {
@@ -414,10 +435,11 @@ test("v2: merges into existing metadata and keeps sessions separate", async () =
   await hooks["http.response"](event(respond({ "x-ratelimit-remaining-requests-10s": "2" }), "ses_b"))
   await hooks.flush()
 
-  assert.equal(updates.length, 2)
+  assert.equal(updates.length, 4)
   assert.equal(updates[0].sessionID, "ses_a")
-  assert.equal(updates[1].sessionID, "ses_b")
-  assert.equal(updates[1].metadata.saiaLimits.tenSeconds, "2")
+  assert.equal(updates[2].sessionID, "ses_b")
+  assert.equal(updates[3].metadata.saiaLimits.tenSeconds, "2")
+  assert.equal(updates[3].metadata.saiaModel, "glm-5.3-flash")
 })
 
 test("v2: reads LiteLLM-prefixed quota headers", async () => {
@@ -426,11 +448,12 @@ test("v2: reads LiteLLM-prefixed quota headers", async () => {
   await hooks["http.response"](event(respond(LITELLM_RATE_LIMIT_HEADERS)))
   await hooks.flush()
 
-  assert.equal(updates[0].metadata.saiaLimits.hour, "199")
-  assert.equal(updates[0].metadata.saiaLimits.resetSec, "8")
+  const limitsUpdate = updates.find((update) => update.metadata.saiaLimits)
+  assert.equal(limitsUpdate.metadata.saiaLimits.hour, "199")
+  assert.equal(limitsUpdate.metadata.saiaLimits.resetSec, "8")
 })
 
-test("v2: ignores other providers and responses without quota headers", async () => {
+test("v2: ignores other providers; SAIA responses without quota headers still record the model", async () => {
   const { hooks, event, respond, updates } = setupV2()
 
   await hooks["http.response"]({
@@ -441,7 +464,10 @@ test("v2: ignores other providers and responses without quota headers", async ()
   await hooks["http.response"](event(respond({})))
   await hooks.flush()
 
-  assert.equal(updates.length, 0)
+  assert.equal(updates.length, 1)
+  assert.equal(updates[0].sessionID, "ses_v2")
+  assert.equal(updates[0].metadata.saiaModel, "glm-5.3-flash")
+  assert.equal(updates[0].metadata.saiaLimits, undefined)
 })
 
 test("v2: serializes concurrent metadata updates for one session", async () => {
@@ -451,8 +477,9 @@ test("v2: serializes concurrent metadata updates for one session", async () => {
   await hooks["http.response"](event(respond({ "x-ratelimit-remaining-requests-10s": "3" })))
   await hooks.flush()
 
-  assert.equal(updates.length, 2)
-  // The second save observed the first one's metadata write.
-  assert.equal(updates[0].metadata.saiaLimits.tenSeconds, "10")
-  assert.equal(updates[1].metadata.saiaLimits.tenSeconds, "3")
+  assert.equal(updates.length, 4)
+  // The second limits save observed the first one's metadata write.
+  assert.equal(updates[1].metadata.saiaLimits.tenSeconds, "10")
+  assert.equal(updates[3].metadata.saiaLimits.tenSeconds, "3")
+  assert.equal(updates[3].metadata.saiaModel, "glm-5.3-flash")
 })

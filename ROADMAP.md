@@ -16,6 +16,7 @@ original roadmap is therefore already implemented.
 | Provider registration / config decoration | `src/saia.ts`, `src/saia-model-metadata.js` |
 | L0/L1 caching, usage tracking, metrics | `src/saia-memory.ts` |
 | Live rate-limit quota widget (TUI) | `src/saia-limits-server.js`, `src/saia-limits-tui.tsx` |
+| Model load ("demand") widget (TUI) | `src/saia-demand.ts`, `src/saia-limits-tui.tsx` |
 | Transport selection (chat-completions / responses) | `src/saia-transport.mjs`, `src/set-saia-transport.mjs` |
 | API-key resolution (`SAIA_API_KEY`, `apiKeyCommand`, settings) | `src/saia-api-key.mjs` |
 | Model group aliases (`best-for-coding`, `fastest`, …) | `src/generate-saia-config.sh`, README |

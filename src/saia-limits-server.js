@@ -70,14 +70,15 @@ function limitsFrom(response) {
   }
 }
 
-// Persists quota snapshots as session metadata. `target` is either an OpenCode 2.x
-// session domain ({ get, update }) or a V1 SDK client whose raw HTTP transport is
-// used directly (the V1 generated wrapper omits the metadata field).
-async function saveLimits(target, sessionID, limits) {
+// Persists metadata patches (quota snapshots, current model) on the session.
+// `target` is either an OpenCode 2.x session domain ({ get, update }) or a V1
+// SDK client whose raw HTTP transport is used directly (the V1 generated
+// wrapper omits the metadata field).
+async function saveMetadata(target, sessionID, patch) {
   if (typeof target?.get === "function" && typeof target?.update === "function") {
     const current = await target.get({ sessionID })
     const metadata = isRecord(current?.metadata) ? current.metadata : {}
-    await target.update({ sessionID, metadata: { ...metadata, saiaLimits: limits } })
+    await target.update({ sessionID, metadata: { ...metadata, ...patch } })
     return
   }
 
@@ -101,20 +102,20 @@ async function saveLimits(target, sessionID, limits) {
     body: {
       metadata: {
         ...metadata,
-        saiaLimits: limits,
+        ...patch,
       },
     },
   })
 }
 
-function createLimitsSaver(target, { onWarning = console.warn } = {}) {
+function createMetadataSaver(target, { onWarning = console.warn } = {}) {
   const pendingWrites = new Map()
 
-  function enqueueLimitsSave(sessionID, limits) {
+  function enqueueMetadataSave(sessionID, patch, label) {
     const previous = pendingWrites.get(sessionID) ?? Promise.resolve()
     const current = previous
       .catch(() => {})
-      .then(() => saveLimits(target, sessionID, limits))
+      .then(() => saveMetadata(target, sessionID, patch))
 
     pendingWrites.set(sessionID, current)
     void current.then(
@@ -123,7 +124,7 @@ function createLimitsSaver(target, { onWarning = console.warn } = {}) {
       },
       (error) => {
         onWarning(
-          `[SAIA] Failed to save rate limits: ${error instanceof Error ? error.message : String(error)}`,
+          `[SAIA] Failed to save ${label}: ${error instanceof Error ? error.message : String(error)}`,
         )
         if (pendingWrites.get(sessionID) === current) pendingWrites.delete(sessionID)
       },
@@ -136,11 +137,20 @@ function createLimitsSaver(target, { onWarning = console.warn } = {}) {
     }
   }
 
-  return { enqueueLimitsSave, flush }
+  return { enqueueMetadataSave, flush }
+}
+
+function modelIDOf(model) {
+  const id = model?.modelID ?? model?.id
+  return typeof id === "string" && id ? id : undefined
 }
 
 export function createSaiaLimitsHooks(client, { onWarning = console.warn } = {}) {
-  const { enqueueLimitsSave, flush } = createLimitsSaver(client, { onWarning })
+  const { enqueueMetadataSave, flush } = createMetadataSaver(client, { onWarning })
+  const enqueueLimitsSave = (sessionID, limits) =>
+    enqueueMetadataSave(sessionID, { saiaLimits: limits }, "rate limits")
+  const enqueueModelSave = (sessionID, modelID) =>
+    enqueueMetadataSave(sessionID, { saiaModel: modelID }, "session model")
 
   return {
     config(config) {
@@ -183,6 +193,10 @@ export function createSaiaLimitsHooks(client, { onWarning = console.warn } = {})
     "chat.headers"(input, output) {
       if (input.model.providerID !== "saia") return
       output.headers[INTERNAL_SESSION_HEADER] = input.sessionID
+      // Remember which SAIA model this session uses so the TUI load widget
+      // knows which entry of the /v1/models demand index to display.
+      const modelID = modelIDOf(input.model)
+      if (modelID) enqueueModelSave(input.sessionID, modelID)
     },
 
     flush,
@@ -192,11 +206,17 @@ export function createSaiaLimitsHooks(client, { onWarning = console.warn } = {})
 // OpenCode 2.x: quota headers are read off the native response in the
 // "http.response" session hook; no fetch wrapping needed.
 export function createSaiaV2LimitsHooks(sessionDomain, { onWarning = console.warn } = {}) {
-  const { enqueueLimitsSave, flush } = createLimitsSaver(sessionDomain, { onWarning })
+  const { enqueueMetadataSave, flush } = createMetadataSaver(sessionDomain, { onWarning })
+  const enqueueLimitsSave = (sessionID, limits) =>
+    enqueueMetadataSave(sessionID, { saiaLimits: limits }, "rate limits")
+  const enqueueModelSave = (sessionID, modelID) =>
+    enqueueMetadataSave(sessionID, { saiaModel: modelID }, "session model")
 
   return {
     async "http.response"(event) {
       if (event?.model?.providerID !== "saia") return
+      const modelID = modelIDOf(event.model)
+      if (modelID) enqueueModelSave(event.sessionID, modelID)
       const limits = limitsFrom(event.response)
       if (limits) enqueueLimitsSave(event.sessionID, limits)
     },

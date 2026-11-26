@@ -246,10 +246,13 @@ test("v2 setup registers hooks, replaces the inventory, and injects the API key"
   })
   await new Promise((resolve) => setTimeout(resolve, 0))
 
-  assert.equal(harness.calls.sessionUpdates.length, 1)
+  assert.equal(harness.calls.sessionUpdates.length, 2)
   assert.equal(harness.calls.sessionUpdates[0].sessionID, "ses_1")
-  assert.equal(harness.calls.sessionUpdates[0].metadata.saiaLimits.tenSeconds, "26")
-  assert.equal(harness.calls.sessionUpdates[0].metadata.saiaLimits.hour, "128")
+  assert.equal(harness.calls.sessionUpdates[0].metadata.saiaModel, "glm-5.3-flash")
+  assert.equal(harness.calls.sessionUpdates[1].metadata.saiaLimits.tenSeconds, "26")
+  assert.equal(harness.calls.sessionUpdates[1].metadata.saiaLimits.hour, "128")
+  // The limits write observed the model write and kept it.
+  assert.equal(harness.calls.sessionUpdates[1].metadata.saiaModel, "glm-5.3-flash")
 
   // The context hook merges Qwen system parts in place.
   const system = [{ type: "text", text: "One" }, { type: "text", text: "Two" }]

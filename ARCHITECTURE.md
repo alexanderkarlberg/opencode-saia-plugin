@@ -32,8 +32,9 @@ re-exports the runtime plugin at `plugins/saia/saia.ts`.
 │  │  ┌───────────────┐ └─────────────────────┘    ││
 │  │  │ saia-limits-  │                            ││
 │  │  │ server.js     │  captures x-ratelimit-*    ││
-│  │  │ saia-limits-  │  headers → quota widget    ││
+│  │  │ saia-limits-  │  headers + model → widget  ││
 │  │  │ tui.tsx       │  (session_prompt_right)    ││
+│  │  │ saia-demand.ts│  polls /v1/models `demand` ││
 │  │  └───────────────┘                            ││
 │  └──────────────────────────────────────────────┘│
 │                                                   │
@@ -87,7 +88,7 @@ hooks), OpenCode ≥1.18.29 calls `server()` (V1 `config`/`chat.headers`/
    response itself (`saia-model-metadata.js`), never hardcoded
 5. **Requests proxied** to the SAIA API using the selected transport
 6. **Rate-limit headers captured** (`x-ratelimit-remaining-*`) and rendered in
-   the TUI quota footer
+   the TUI footer widget, together with the selected model's live load (`demand` from `/v1/models`, cached 60 s in `~/.cache/saia/demand.json`)
 7. **Usage/metrics recorded** to `~/.cache/saia/`
 8. **Static `opencode.json`** (installed by `install.sh`) remains as the
    no-plugin fallback; `reconcile-opencode-models.sh` prunes stale ids from it
@@ -98,6 +99,7 @@ hooks), OpenCode ≥1.18.29 calls `server()` (V1 `config`/`chat.headers`/
 ```
 ~/.cache/saia/
 ├── models.json          # API response cache (24h TTL)
+├── demand.json          # Live model load snapshot (60s TTL, polled by the TUI)
 ├── models-list.json     # Model ID list for change detection
 ├── usage.jsonl          # Per-use tracking (local)
 ├── metrics.json         # Per-model performance metrics
